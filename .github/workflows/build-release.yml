@@ -1,4 +1,4 @@
-name: Build and release mihomo MRS
+name: Build and release AdRulesUltra MRS
 
 on:
   workflow_dispatch:
@@ -24,16 +24,20 @@ jobs:
 
       - name: Clone upstream rules
         run: |
-          git clone --depth=1 https://github.com/liuzq2002/Adguard-Home-For-Magisk-Mod upstream
-          echo "UPSTREAM_SHA=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_ENV"
+          git clone --depth=1 https://github.com/liuzq2002/Adguard-Home-For-Magisk-Mod upstream-adguard
+          git clone --depth=1 https://github.com/privacy-protection-tools/anti-AD upstream-anti-ad
+          echo "ADGUARD_SHA=$(git -C upstream-adguard rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "ANTI_AD_SHA=$(git -C upstream-anti-ad rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "RELEASE_DATE=$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
 
       - name: Build text rule providers
         run: |
           uv run python -m scripts.build_rulesets \
-            --source upstream \
+            --adguard-source upstream-adguard \
+            --anti-ad-source upstream-anti-ad \
             --output dist \
-            --upstream-commit "$UPSTREAM_SHA"
+            --adguard-commit "$ADGUARD_SHA" \
+            --anti-ad-commit "$ANTI_AD_SHA"
 
       - name: Install latest mihomo
         run: |
@@ -60,10 +64,10 @@ jobs:
       - name: Convert to MRS
         run: |
           set -euo pipefail
-          for file in dist/adguard_ads.txt dist/adguard_allow.txt dist/adguard_malware.txt; do
+          for file in dist/adrules_ultra_ads.txt dist/adrules_ultra_allow.txt dist/adrules_ultra_malware.txt; do
             /tmp/mihomo convert-ruleset domain text "$file" "${file%.txt}.mrs"
           done
-          for file in dist/adguard_ads_ipcidr.txt dist/adguard_allow_ipcidr.txt dist/adguard_malware_ipcidr.txt; do
+          for file in dist/adrules_ultra_ads_ipcidr.txt dist/adrules_ultra_allow_ipcidr.txt dist/adrules_ultra_malware_ipcidr.txt; do
             if [ -s "$file" ]; then
               /tmp/mihomo convert-ruleset ipcidr text "$file" "${file%.txt}.mrs"
             fi
@@ -74,10 +78,12 @@ jobs:
       - name: Prepare release notes
         run: |
           {
-            echo "# AdGuard Home For Magisk Mod mihomo MRS"
+            echo "# AdRulesUltra mihomo MRS"
             echo
             echo "- Upstream: https://github.com/liuzq2002/Adguard-Home-For-Magisk-Mod"
-            echo "- Upstream commit: \`$UPSTREAM_SHA\`"
+            echo "- Upstream commit: \`$ADGUARD_SHA\`"
+            echo "- Upstream: https://github.com/privacy-protection-tools/anti-AD"
+            echo "- Upstream commit: \`$ANTI_AD_SHA\`"
             echo "- Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo
             cat dist/manifest.md
@@ -85,7 +91,7 @@ jobs:
 
       - name: Check existing release
         run: |
-          if gh release view "upstream-$UPSTREAM_SHA" >/dev/null 2>&1; then
+          if gh release view "snapshot-$ADGUARD_SHA-$ANTI_AD_SHA" >/dev/null 2>&1; then
             echo "RELEASE_EXISTS=true" >> "$GITHUB_ENV"
           else
             echo "RELEASE_EXISTS=false" >> "$GITHUB_ENV"
@@ -97,8 +103,8 @@ jobs:
         if: env.RELEASE_EXISTS != 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: upstream-${{ env.UPSTREAM_SHA }}
-          name: mihomo MRS ${{ env.RELEASE_DATE }}
+          tag_name: snapshot-${{ env.ADGUARD_SHA }}-${{ env.ANTI_AD_SHA }}
+          name: AdRulesUltra MRS ${{ env.RELEASE_DATE }}
           body_path: release-notes.md
           files: |
             dist/*.mrs

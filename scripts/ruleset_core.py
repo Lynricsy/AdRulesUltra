@@ -10,32 +10,55 @@ from scripts.ruleset_types import (
     ConversionStats,
     RuleCollector,
     RuleKind,
+    UpstreamKind,
 )
 
 COMMENT_PREFIXES: Final[tuple[str, ...]] = ("!", "#", "[")
 EXCEPTION_PREFIX: Final[str] = "@@"
 MIN_QUOTED_LENGTH: Final[int] = 2
+OUTPUT_PREFIX: Final[str] = "adrules_ultra"
 
 
-def convert_repository(source_dir: Path, upstream_commit: str) -> ConversionResult:
+def convert_repositories(
+    adguard_source_dir: Path,
+    anti_ad_source_dir: Path,
+    upstream_commits: dict[UpstreamKind, str],
+) -> ConversionResult:
+    collectors: dict[RuleKind, RuleCollector] = {kind: RuleCollector() for kind in RuleKind}
+    stats: dict[RuleKind, ConversionStats] = {kind: ConversionStats() for kind in RuleKind}
+
+    parse_adguard_magisk(adguard_source_dir, collectors, stats)
+    parse_anti_ad(anti_ad_source_dir, collectors, stats)
+
+    return ConversionResult(
+        buckets={kind: collector.freeze() for kind, collector in collectors.items()},
+        stats=stats,
+        upstream_commits=upstream_commits,
+    )
+
+
+def parse_adguard_magisk(
+    source_dir: Path,
+    collectors: dict[RuleKind, RuleCollector],
+    stats: dict[RuleKind, ConversionStats],
+) -> None:
     filters_dir = source_dir / "Adguardhome" / "bin" / "data" / "filters"
     if not filters_dir.is_dir():
         message = f"missing rule directory: {filters_dir}"
         raise FileNotFoundError(message)
-
-    collectors: dict[RuleKind, RuleCollector] = {kind: RuleCollector() for kind in RuleKind}
-    stats: dict[RuleKind, ConversionStats] = {kind: ConversionStats() for kind in RuleKind}
 
     parse_file(filters_dir / "1721861846.txt", RuleKind.ADS, collectors, stats)
     parse_file(filters_dir / "1735560833.txt", RuleKind.MALWARE, collectors, stats)
     parse_file(filters_dir / "1721861844.txt", RuleKind.ALLOW, collectors, stats)
     parse_user_rules(source_dir / "Adguardhome" / "bin" / "AdGuardHome.yaml", collectors, stats)
 
-    return ConversionResult(
-        buckets={kind: collector.freeze() for kind, collector in collectors.items()},
-        stats=stats,
-        upstream_commit=upstream_commit,
-    )
+
+def parse_anti_ad(
+    source_dir: Path,
+    collectors: dict[RuleKind, RuleCollector],
+    stats: dict[RuleKind, ConversionStats],
+) -> None:
+    parse_file(source_dir / "anti-ad-adguard.txt", RuleKind.ADS, collectors, stats)
 
 
 def parse_file(
@@ -116,8 +139,8 @@ def parse_rule(
 def write_outputs(result: ConversionResult, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     for kind, buckets in result.buckets.items():
-        write_lines(output_dir / f"adguard_{kind.value}.txt", buckets.domains)
-        write_lines(output_dir / f"adguard_{kind.value}_ipcidr.txt", buckets.ipcidrs)
+        write_lines(output_dir / f"{OUTPUT_PREFIX}_{kind.value}.txt", buckets.domains)
+        write_lines(output_dir / f"{OUTPUT_PREFIX}_{kind.value}_ipcidr.txt", buckets.ipcidrs)
     write_manifest(result, output_dir / "manifest.md")
 
 
@@ -128,11 +151,15 @@ def write_lines(path: Path, lines: Iterable[str]) -> None:
 
 def write_manifest(result: ConversionResult, path: Path) -> None:
     lines = [
-        "# AdGuard Home For Magisk Mod mihomo MRS",
+        "# AdRulesUltra mihomo MRS",
         "",
-        f"- 上游提交: `{result.upstream_commit}`",
-        "- 产物语义: AdGuard Home DNS 规则到 mihomo domain/ipcidr rule-provider 的保守转换。",
-        "- 例外规则已拆为 `adguard_allow.*`, 使用时必须放在拦截规则之前。",
+        "## 上游",
+        "",
+        f"- AdGuard Home For Magisk Mod: `{result.upstream_commits[UpstreamKind.ADGUARD_MAGISK]}`",
+        f"- anti-AD: `{result.upstream_commits[UpstreamKind.ANTI_AD]}`",
+        "",
+        "- 产物语义: 多上游 DNS 广告规则到 mihomo domain/ipcidr rule-provider 的保守转换。",
+        f"- 例外规则已拆为 `{OUTPUT_PREFIX}_allow.*`, 建议在 mihomo `sub-rules` 中用 `PASS` 使用。",
         "",
         "| 集合 | domain | ipcidr | 跳过 | 正则 | 修饰符 | 路径 | 模式 |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
@@ -150,9 +177,9 @@ def write_manifest(result: ConversionResult, path: Path) -> None:
             "",
             "## 规则集",
             "",
-            "- `adguard_ads.mrs` / `adguard_ads_ipcidr.mrs`",
-            "- `adguard_malware.mrs` / `adguard_malware_ipcidr.mrs`",
-            "- `adguard_allow.mrs` / `adguard_allow_ipcidr.mrs`",
+            f"- `{OUTPUT_PREFIX}_ads.mrs` / `{OUTPUT_PREFIX}_ads_ipcidr.mrs`",
+            f"- `{OUTPUT_PREFIX}_malware.mrs` / `{OUTPUT_PREFIX}_malware_ipcidr.mrs`",
+            f"- `{OUTPUT_PREFIX}_allow.mrs` / `{OUTPUT_PREFIX}_allow_ipcidr.mrs`",
         ],
     )
     _ = path.write_text("\n".join(lines) + "\n", encoding="utf-8")

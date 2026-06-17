@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from scripts.ruleset_core import parse_rule
+from pathlib import Path
+
+from scripts.ruleset_core import convert_repositories, parse_rule
 from scripts.ruleset_parser import parse_adguard_values
 from scripts.ruleset_types import (
     ConversionStats,
     RuleCollector,
     RuleKind,
+    UpstreamKind,
 )
 
 
@@ -175,3 +178,45 @@ def test_parse_adguard_values_when_domain_modifier_not_allowed() -> None:
 
     assert values == ()
     assert stat.unsupported_modifier == 1
+
+
+def test_convert_repositories_when_multiple_upstreams_have_rules(tmp_path: Path) -> None:
+    adguard_source = tmp_path / "adguard"
+    anti_ad_source = tmp_path / "anti-ad"
+    filters_dir = adguard_source / "Adguardhome" / "bin" / "data" / "filters"
+    filters_dir.mkdir(parents=True)
+    (adguard_source / "Adguardhome" / "bin").mkdir(exist_ok=True)
+    _ = (filters_dir / "1721861846.txt").write_text("||ads.example.com^\n", encoding="utf-8")
+    _ = (filters_dir / "1735560833.txt").write_text("||bad.example.com^\n", encoding="utf-8")
+    _ = (filters_dir / "1721861844.txt").write_text("@@||safe.example.com^\n", encoding="utf-8")
+    _ = (adguard_source / "Adguardhome" / "bin" / "AdGuardHome.yaml").write_text(
+        "user_rules:\n  - '||custom.example.com^'\n",
+        encoding="utf-8",
+    )
+    anti_ad_source.mkdir()
+    _ = (anti_ad_source / "anti-ad-adguard.txt").write_text(
+        "@@||anti-safe.example.com^\n||ads.example.com^\n||anti.example.com^\n",
+        encoding="utf-8",
+    )
+
+    result = convert_repositories(
+        adguard_source,
+        anti_ad_source,
+        {
+            UpstreamKind.ADGUARD_MAGISK: "adguard-sha",
+            UpstreamKind.ANTI_AD: "anti-sha",
+        },
+    )
+
+    assert result.buckets[RuleKind.ADS].domains == {
+        "+.ads.example.com",
+        "+.anti.example.com",
+        "+.custom.example.com",
+    }
+    assert result.buckets[RuleKind.ALLOW].domains == {
+        "+.anti-safe.example.com",
+        "+.safe.example.com",
+    }
+    assert result.buckets[RuleKind.MALWARE].domains == {"+.bad.example.com"}
+    assert result.upstream_commits[UpstreamKind.ADGUARD_MAGISK] == "adguard-sha"
+    assert result.upstream_commits[UpstreamKind.ANTI_AD] == "anti-sha"

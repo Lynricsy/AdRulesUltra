@@ -10,6 +10,11 @@ class RuleKind(StrEnum):
     MALWARE = "malware"
 
 
+class UpstreamKind(StrEnum):
+    ADGUARD_MAGISK = "adguard-magisk"
+    ANTI_AD = "anti-ad"
+
+
 @dataclass(frozen=True, slots=True)
 class RuleBuckets:
     domains: frozenset[str] = frozenset()
@@ -48,4 +53,4 @@ class ConversionStats:
 class ConversionResult:
     buckets: dict[RuleKind, RuleBuckets]
     stats: dict[RuleKind, ConversionStats]
-    upstream_commit: str
+    upstream_commits: dict[UpstreamKind, str]
