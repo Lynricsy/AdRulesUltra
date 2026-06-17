@@ -72,6 +72,7 @@ jobs:
               /tmp/mihomo convert-ruleset ipcidr text "$file" "${file%.txt}.mrs"
             fi
           done
+          uv run python -m scripts.ruleset_stats --output dist
           find dist -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > dist/SHA256SUMS
           sha256sum -c dist/SHA256SUMS
 
@@ -89,18 +90,7 @@ jobs:
             cat dist/manifest.md
           } > release-notes.md
 
-      - name: Check existing release
-        run: |
-          if gh release view "snapshot-$ADGUARD_SHA-$ANTI_AD_SHA" >/dev/null 2>&1; then
-            echo "RELEASE_EXISTS=true" >> "$GITHUB_ENV"
-          else
-            echo "RELEASE_EXISTS=false" >> "$GITHUB_ENV"
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-
       - name: Publish release
-        if: env.RELEASE_EXISTS != 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: snapshot-${{ env.ADGUARD_SHA }}-${{ env.ANTI_AD_SHA }}
@@ -110,5 +100,7 @@ jobs:
             dist/*.mrs
             dist/*.txt
             dist/manifest.md
+            dist/stats.json
             dist/SHA256SUMS
           make_latest: true
+          overwrite_files: true

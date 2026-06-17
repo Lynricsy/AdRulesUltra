@@ -4,6 +4,7 @@ from pathlib import Path
 
 from scripts.ruleset_core import convert_repositories, parse_rule
 from scripts.ruleset_parser import parse_adguard_values
+from scripts.ruleset_stats import build_stats_payload
 from scripts.ruleset_types import (
     ConversionStats,
     RuleCollector,
@@ -220,3 +221,36 @@ def test_convert_repositories_when_multiple_upstreams_have_rules(tmp_path: Path)
     assert result.buckets[RuleKind.MALWARE].domains == {"+.bad.example.com"}
     assert result.upstream_commits[UpstreamKind.ADGUARD_MAGISK] == "adguard-sha"
     assert result.upstream_commits[UpstreamKind.ANTI_AD] == "anti-sha"
+
+
+def test_build_stats_payload_when_release_assets_exist(tmp_path: Path) -> None:
+    ads_domain_count = 2
+    ads_ipcidr_count = 1
+    total_rule_count = 5
+    ads_mrs_bytes = 1536
+
+    _ = (tmp_path / "adrules_ultra_ads.txt").write_text("+.ads.example\n+.ads-two.example\n", encoding="utf-8")
+    _ = (tmp_path / "adrules_ultra_ads_ipcidr.txt").write_text("203.0.113.1/32\n", encoding="utf-8")
+    _ = (tmp_path / "adrules_ultra_allow.txt").write_text("+.safe.example\n", encoding="utf-8")
+    _ = (tmp_path / "adrules_ultra_allow_ipcidr.txt").write_text("", encoding="utf-8")
+    _ = (tmp_path / "adrules_ultra_malware.txt").write_text("+.bad.example\n", encoding="utf-8")
+    _ = (tmp_path / "adrules_ultra_malware_ipcidr.txt").write_text("", encoding="utf-8")
+    _ = (tmp_path / "adrules_ultra_ads.mrs").write_bytes(b"a" * ads_mrs_bytes)
+    _ = (tmp_path / "adrules_ultra_ads_ipcidr.mrs").write_bytes(b"ip")
+    _ = (tmp_path / "adrules_ultra_allow.mrs").write_bytes(b"allow")
+    _ = (tmp_path / "adrules_ultra_malware.mrs").write_bytes(b"malware")
+
+    payload = build_stats_payload(tmp_path)
+
+    assert payload["rules"]["ads"]["domains"] == ads_domain_count
+    assert payload["rules"]["ads"]["ipcidrs"] == ads_ipcidr_count
+    assert payload["totals"]["total"] == total_rule_count
+    assert payload["badges"] == {
+        "ads_domains": "2",
+        "allow_domains": "1",
+        "malware_domains": "1",
+        "total_rules": "5",
+        "ads_mrs_size": "2 KiB",
+    }
+    assert payload["mrs"]["ads"]["bytes"] == ads_mrs_bytes
+    assert "allow_ipcidr" not in payload["mrs"]

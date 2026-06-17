@@ -1,5 +1,14 @@
 # AdRulesUltra
 
+[![Build and release AdRulesUltra MRS](https://github.com/Lynricsy/AdRulesUltra/actions/workflows/build-release.yml/badge.svg)](https://github.com/Lynricsy/AdRulesUltra/actions/workflows/build-release.yml)
+[![Latest release](https://img.shields.io/github/v/release/Lynricsy/AdRulesUltra?label=release&sort=semver)](https://github.com/Lynricsy/AdRulesUltra/releases/latest)
+[![Release downloads](https://img.shields.io/github/downloads/Lynricsy/AdRulesUltra/total?label=downloads)](https://github.com/Lynricsy/AdRulesUltra/releases)
+![Ads domains](https://img.shields.io/badge/dynamic/json?label=ads%20domains&query=%24.badges.ads_domains&url=https%3A%2F%2Fgithub.com%2FLynricsy%2FAdRulesUltra%2Freleases%2Flatest%2Fdownload%2Fstats.json&color=red)
+![Allow domains](https://img.shields.io/badge/dynamic/json?label=allow%20domains&query=%24.badges.allow_domains&url=https%3A%2F%2Fgithub.com%2FLynricsy%2FAdRulesUltra%2Freleases%2Flatest%2Fdownload%2Fstats.json&color=brightgreen)
+![Malware domains](https://img.shields.io/badge/dynamic/json?label=malware%20domains&query=%24.badges.malware_domains&url=https%3A%2F%2Fgithub.com%2FLynricsy%2FAdRulesUltra%2Freleases%2Flatest%2Fdownload%2Fstats.json&color=orange)
+![Total rules](https://img.shields.io/badge/dynamic/json?label=total%20rules&query=%24.badges.total_rules&url=https%3A%2F%2Fgithub.com%2FLynricsy%2FAdRulesUltra%2Freleases%2Flatest%2Fdownload%2Fstats.json&color=blue)
+![MRS size](https://img.shields.io/badge/dynamic/json?label=main%20MRS&query=%24.badges.ads_mrs_size&url=https%3A%2F%2Fgithub.com%2FLynricsy%2FAdRulesUltra%2Freleases%2Flatest%2Fdownload%2Fstats.json&color=informational)
+
 AdRulesUltra 是一个独立的广告与恶意域名规则聚合项目。它定时拉取多个上游 DNS 规则源，合并、去重并转换为 mihomo 可直接加载的 `.mrs` 规则集。
 
 当前合并的上游：
@@ -20,6 +29,7 @@ GitHub Actions 会每天拉取上游仓库，生成并发布这些 Release 资�
 | `adrules_ultra_ads_ipcidr.mrs` | `ipcidr` | `REJECT` | 从广告规则抽取的 IP；非空时发布 |
 | `adrules_ultra_malware_ipcidr.mrs` | `ipcidr` | `REJECT` | 从恶意域名规则抽取的 IP；非空时发布 |
 | `manifest.md` | - | - | 本次转换统计和上游提交 |
+| `stats.json` | - | - | README 动态徽章读取的规则数量和 MRS 体积 |
 | `SHA256SUMS` | - | - | Release 资产校验和 |
 
 ## 使用教程
