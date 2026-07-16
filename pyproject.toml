@@ -33,3 +33,8 @@ ignore = [
 include = ["scripts", "tests"]
 typeCheckingMode = "all"
 pythonVersion = "3.13"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

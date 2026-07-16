@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Final
 
+from scripts.ruleset_formats import write_kind_text_formats
 from scripts.ruleset_parser import as_ipcidr, parse_adguard_values
 from scripts.ruleset_types import (
     ConversionResult,
@@ -17,7 +17,6 @@ COMMENT_PREFIXES: Final[tuple[str, ...]] = ("!", "#", "[")
 EXCEPTION_PREFIX: Final[str] = "@@"
 MIN_QUOTED_LENGTH: Final[int] = 2
 OUTPUT_PREFIX: Final[str] = "adrules_ultra"
-
 
 def convert_repositories(
     adguard_source_dir: Path,
@@ -38,7 +37,6 @@ def convert_repositories(
         upstream_commits=upstream_commits,
     )
 
-
 def parse_adguard_magisk(
     source_dir: Path,
     collectors: dict[RuleKind, RuleCollector],
@@ -54,7 +52,6 @@ def parse_adguard_magisk(
     parse_file(filters_dir / "1721861844.txt", RuleKind.ALLOW, collectors, stats)
     parse_user_rules(source_dir / "Adguardhome" / "bin" / "AdGuardHome.yaml", collectors, stats)
 
-
 def parse_anti_ad(
     source_dir: Path,
     collectors: dict[RuleKind, RuleCollector],
@@ -64,14 +61,12 @@ def parse_anti_ad(
     parse_file(source_dir / "anti-ad-adguard.txt", RuleKind.ALLOW, collectors, stats, exceptions_only=True)
     parse_clash_payload_file(source_dir / "anti-ad-white-for-clash.yaml", RuleKind.ALLOW, collectors, stats)
 
-
 def parse_coolapk_1007_reward(
     source_path: Path,
     collectors: dict[RuleKind, RuleCollector],
     stats: dict[RuleKind, ConversionStats],
 ) -> None:
     parse_file(source_path, RuleKind.ADS, collectors, stats)
-
 
 def parse_file(
     path: Path,
@@ -89,7 +84,6 @@ def parse_file(
             if exceptions_only and not raw_line.lstrip().startswith(EXCEPTION_PREFIX):
                 continue
             parse_rule(raw_line.rstrip("\n"), default_kind, collectors, stats)
-
 
 def parse_clash_payload_file(
     path: Path,
@@ -111,7 +105,6 @@ def parse_clash_payload_file(
                 continue
             parse_clash_payload_value(unquote_yaml_list_value(line[2:]), default_kind, collectors, stats)
 
-
 def parse_clash_payload_value(
     value: str,
     default_kind: RuleKind,
@@ -126,7 +119,6 @@ def parse_clash_payload_value(
         return
     collectors[default_kind].add_domain(value)
     stat.domain += 1
-
 
 def parse_user_rules(
     config_path: Path,
@@ -149,7 +141,6 @@ def parse_user_rules(
                 continue
             parse_rule(unquote_yaml_list_value(line[4:]), RuleKind.ADS, collectors, stats)
 
-
 def unquote_yaml_list_value(raw: str) -> str:
     value = raw.strip()
     if len(value) >= MIN_QUOTED_LENGTH and value[0] == "'" and value[-1] == "'":
@@ -157,7 +148,6 @@ def unquote_yaml_list_value(raw: str) -> str:
     if len(value) >= MIN_QUOTED_LENGTH and value[0] == '"' and value[-1] == '"':
         return bytes(value[1:-1], "utf-8").decode("unicode_escape")
     return value
-
 
 def parse_rule(
     raw_line: str,
@@ -188,23 +178,16 @@ def parse_rule(
         collectors[kind].add_domain(value)
         stat.domain += 1
 
-
 def write_outputs(result: ConversionResult, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     for kind, buckets in result.buckets.items():
-        write_lines(output_dir / f"{OUTPUT_PREFIX}_{kind.value}.txt", buckets.domains)
-        write_lines(output_dir / f"{OUTPUT_PREFIX}_{kind.value}_ipcidr.txt", buckets.ipcidrs)
+        _ = write_kind_text_formats(kind, buckets, output_dir)
     write_manifest(result, output_dir / "manifest.md")
-
-
-def write_lines(path: Path, lines: Iterable[str]) -> None:
-    values = sorted(set(lines))
-    _ = path.write_text("\n".join(values) + ("\n" if values else ""), encoding="utf-8")
 
 
 def write_manifest(result: ConversionResult, path: Path) -> None:
     lines = [
-        "# AdRulesUltra mihomo MRS",
+        "# AdRulesUltra multi-format rulesets",
         "",
         "## 上游",
         "",
@@ -213,8 +196,10 @@ def write_manifest(result: ConversionResult, path: Path) -> None:
         f"- dead-horse: `{result.upstream_commits[UpstreamKind.DEAD_HORSE]}`",
         f"- Coolapk 1007 reward: `{result.upstream_commits[UpstreamKind.COOLAPK_1007_REWARD]}`",
         "",
-        "- 产物语义: 多上游 DNS 广告规则到 mihomo domain/ipcidr rule-provider 的保守转换。",
-        f"- 例外规则已拆为 `{OUTPUT_PREFIX}_allow.*`, 建议在 mihomo `sub-rules` 中用 `PASS` 使用。",
+        "- 产物语义: 多上游 DNS 广告规则到多种客户端格式的保守转换。",
+        f"- 例外规则已拆为 `{OUTPUT_PREFIX}_allow.*`, mihomo 建议在 `sub-rules` 中用 `PASS`。",
+        "- dnsmasq / SmartDNS 仅输出 ads、malware 的 suffix 阻断规则; exact 与 wildcard 不会静默扩大。",
+        "- allow 不生成 dnsmasq / SmartDNS 阻断文件。",
         "",
         "| 集合 | domain | ipcidr | 跳过 | 正则 | 修饰符 | 路径 | 模式 |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
@@ -232,13 +217,14 @@ def write_manifest(result: ConversionResult, path: Path) -> None:
             "",
             "## 规则集",
             "",
-            f"- `{OUTPUT_PREFIX}_ads.mrs` / `{OUTPUT_PREFIX}_ads_ipcidr.mrs`",
-            f"- `{OUTPUT_PREFIX}_malware.mrs` / `{OUTPUT_PREFIX}_malware_ipcidr.mrs`",
-            f"- `{OUTPUT_PREFIX}_allow.mrs` / `{OUTPUT_PREFIX}_allow_ipcidr.mrs`",
+            f"- mihomo MRS: `{OUTPUT_PREFIX}_{{ads,allow,malware}}.mrs` / `*_ipcidr.mrs`",
+            f"- Clash YAML: `{OUTPUT_PREFIX}_*_clash.yaml` / `*_clash_ipcidr.yaml`",
+            "- domains / surge / surge2 / adguard / easylist / sing-box json",
+            f"- dnsmasq / SmartDNS: 仅 `{OUTPUT_PREFIX}_{{ads,malware}}_*.conf`",
+            f"- sing-box SRS: `{OUTPUT_PREFIX}_*_singbox.srs` (由 json 编译)",
         ],
     )
     _ = path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
 
 def print_summary(result: ConversionResult) -> None:
     for kind in RuleKind:

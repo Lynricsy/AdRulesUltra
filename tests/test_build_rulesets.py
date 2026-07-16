@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
-from scripts.ruleset_core import convert_repositories, parse_rule
+from scripts.ruleset_core import convert_repositories, parse_rule, write_outputs
+from scripts.ruleset_domain import DomainMatchKind, classify_domain, to_domain_regex
+from scripts.ruleset_formats import write_kind_text_formats
 from scripts.ruleset_parser import parse_adguard_values
 from scripts.ruleset_stats import build_stats_payload
 from scripts.ruleset_types import (
     ConversionStats,
+    RuleBuckets,
     RuleCollector,
     RuleKind,
     UpstreamKind,
@@ -296,3 +300,162 @@ def test_build_stats_payload_when_release_assets_exist(tmp_path: Path) -> None:
     }
     assert payload["mrs"]["ads"]["bytes"] == ads_mrs_bytes
     assert "allow_ipcidr" not in payload["mrs"]
+
+
+def test_classify_domain_when_exact_suffix_subdomain_and_wildcard() -> None:
+    exact = classify_domain("exact.example.com")
+    suffix = classify_domain("+.example.com")
+    subdomain = classify_domain(".example.com")
+    wildcard = classify_domain("+.ads*-normal.example.com")
+
+    assert exact.kind is DomainMatchKind.EXACT
+    assert exact.value == "exact.example.com"
+    assert suffix.kind is DomainMatchKind.SUFFIX
+    assert suffix.value == "example.com"
+    assert subdomain.kind is DomainMatchKind.SUBDOMAIN
+    assert subdomain.value == "example.com"
+    assert wildcard.kind is DomainMatchKind.WILDCARD
+    assert to_domain_regex(subdomain) == r"^.+\.example\.com$"
+    assert to_domain_regex(suffix) == r"^(?:.+\.)?example\.com$"
+
+
+def test_write_kind_text_formats_preserves_mihomo_semantics(tmp_path: Path) -> None:
+    buckets = RuleBuckets(
+        domains=frozenset(
+            {
+                "exact.example.com",
+                "+.suffix.example.com",
+                ".sub.example.com",
+                "+.ads*-wild.example.com",
+            },
+        ),
+        ipcidrs=frozenset({"203.0.113.1/32"}),
+    )
+
+    stats = write_kind_text_formats(RuleKind.ADS, buckets, tmp_path)
+
+    mihomo = (tmp_path / "adrules_ultra_ads.txt").read_text(encoding="utf-8").splitlines()
+    assert "exact.example.com" in mihomo
+    assert "+.suffix.example.com" in mihomo
+    assert ".sub.example.com" in mihomo
+    assert "+.ads*-wild.example.com" in mihomo
+    assert "+.sub.example.com" not in mihomo
+
+    clash_domain = (tmp_path / "adrules_ultra_ads_clash.yaml").read_text(encoding="utf-8")
+    assert "203.0.113.1/32" not in clash_domain
+    assert ".sub.example.com" in clash_domain
+    clash_ip = (tmp_path / "adrules_ultra_ads_clash_ipcidr.yaml").read_text(encoding="utf-8")
+    assert "203.0.113.1/32" in clash_ip
+    assert "exact.example.com" not in clash_ip
+
+    domains_txt = (tmp_path / "adrules_ultra_ads_domains.txt").read_text(encoding="utf-8").splitlines()
+    assert domains_txt == ["exact.example.com", "suffix.example.com"]
+
+    surge = (tmp_path / "adrules_ultra_ads_surge.txt").read_text(encoding="utf-8").splitlines()
+    assert "DOMAIN,exact.example.com" in surge
+    assert "DOMAIN-SUFFIX,suffix.example.com" in surge
+    assert "DOMAIN-WILDCARD,*.sub.example.com" in surge
+    assert "IP-CIDR,203.0.113.1/32" in surge
+
+    surge2 = (tmp_path / "adrules_ultra_ads_surge2.txt").read_text(encoding="utf-8").splitlines()
+    assert "exact.example.com" in surge2
+    assert ".suffix.example.com" in surge2
+    assert ".sub.example.com" not in surge2
+
+    dnsmasq = (tmp_path / "adrules_ultra_ads_dnsmasq.conf").read_text(encoding="utf-8").splitlines()
+    assert dnsmasq == ["address=/suffix.example.com/"]
+
+    smartdns = (tmp_path / "adrules_ultra_ads_smartdns.conf").read_text(encoding="utf-8").splitlines()
+    assert smartdns == ["address /suffix.example.com/#"]
+
+    adguard = (tmp_path / "adrules_ultra_ads_adguard.txt").read_text(encoding="utf-8").splitlines()
+    assert "exact.example.com" in adguard
+    assert "||suffix.example.com^" in adguard
+    assert "/^.+\\.sub\\.example\\.com$/" in adguard
+    assert all("ads*-wild" not in line for line in adguard)
+
+    payload = json.loads((tmp_path / "adrules_ultra_ads_singbox.json").read_text(encoding="utf-8"))
+    rule = payload["rules"][0]
+    assert rule["domain"] == ["exact.example.com"]
+    assert rule["domain_suffix"] == ["suffix.example.com"]
+    assert r"^.+\.sub\.example\.com$" in rule["domain_regex"]
+    assert r"^(?:.+\.)?ads.*-wild\.example\.com$" in rule["domain_regex"]
+    assert rule["ip_cidr"] == ["203.0.113.1/32"]
+    assert stats.domains_skipped_wildcard == 1
+    assert stats.domains_subdomain == 1
+
+
+def test_write_kind_text_formats_skips_allow_dns_sinkhole(tmp_path: Path) -> None:
+    buckets = RuleBuckets(domains=frozenset({"+.safe.example.com", "exact.safe.example.com"}))
+    _ = write_kind_text_formats(RuleKind.ALLOW, buckets, tmp_path)
+
+    assert not (tmp_path / "adrules_ultra_allow_dnsmasq.conf").exists()
+    assert not (tmp_path / "adrules_ultra_allow_smartdns.conf").exists()
+    adguard = (tmp_path / "adrules_ultra_allow_adguard.txt").read_text(encoding="utf-8").splitlines()
+    assert "@@||safe.example.com^" in adguard
+    assert "@@exact.safe.example.com" in adguard
+
+
+def test_write_kind_text_formats_removes_stale_clash_ipcidr(tmp_path: Path) -> None:
+    stale = tmp_path / "adrules_ultra_malware_clash_ipcidr.yaml"
+    _ = stale.write_text("payload:\n  - '203.0.113.8/32'\n", encoding="utf-8")
+    buckets = RuleBuckets(domains=frozenset({"+.bad.example.com"}))
+
+    _ = write_kind_text_formats(RuleKind.MALWARE, buckets, tmp_path)
+
+    assert not stale.exists()
+    assert (tmp_path / "adrules_ultra_malware_clash.yaml").is_file()
+
+
+def test_write_outputs_emits_multi_format_files(tmp_path: Path) -> None:
+    adguard_source = tmp_path / "adguard"
+    anti_ad_source = tmp_path / "anti-ad"
+    reward_source = tmp_path / "reward.txt"
+    filters_dir = adguard_source / "Adguardhome" / "bin" / "data" / "filters"
+    filters_dir.mkdir(parents=True)
+    (adguard_source / "Adguardhome" / "bin").mkdir(exist_ok=True)
+    _ = (filters_dir / "1721861846.txt").write_text(
+        "||ads.example.com^\nexact.example.com\n",
+        encoding="utf-8",
+    )
+    _ = (filters_dir / "1735560833.txt").write_text("||bad.example.com^\n", encoding="utf-8")
+    _ = (filters_dir / "1721861844.txt").write_text("@@||safe.example.com^\n", encoding="utf-8")
+    _ = (adguard_source / "Adguardhome" / "bin" / "AdGuardHome.yaml").write_text(
+        "user_rules:\n  - '||custom.example.com^'\n",
+        encoding="utf-8",
+    )
+    anti_ad_source.mkdir()
+    _ = (anti_ad_source / "anti-ad-adguard.txt").write_text("@@||anti-safe.example.com^\n", encoding="utf-8")
+    _ = (anti_ad_source / "anti-ad-clash.yaml").write_text(
+        "payload:\n  - '+.anti-clash.example.com'\n  - '.subonly.example.com'\n  - '203.0.113.9/32'\n",
+        encoding="utf-8",
+    )
+    _ = (anti_ad_source / "anti-ad-white-for-clash.yaml").write_text(
+        "payload:\n  - '+.anti-white.example.com'\n",
+        encoding="utf-8",
+    )
+    _ = reward_source.write_text("0.0.0.0 reward.example.com\n", encoding="utf-8")
+
+    result = convert_repositories(
+        adguard_source,
+        anti_ad_source,
+        reward_source,
+        {
+            UpstreamKind.ADGUARD_MAGISK: "adguard-sha",
+            UpstreamKind.ANTI_AD: "anti-sha",
+            UpstreamKind.DEAD_HORSE: "dead-horse-sha256",
+            UpstreamKind.COOLAPK_1007_REWARD: "reward-sha256",
+        },
+    )
+    out = tmp_path / "dist"
+    write_outputs(result, out)
+
+    ads_txt = (out / "adrules_ultra_ads.txt").read_text(encoding="utf-8").splitlines()
+    assert ".subonly.example.com" in ads_txt
+    assert "+.subonly.example.com" not in ads_txt
+    assert (out / "adrules_ultra_ads_singbox.json").is_file()
+    assert (out / "adrules_ultra_ads_clash.yaml").is_file()
+    assert (out / "adrules_ultra_ads_clash_ipcidr.yaml").is_file()
+    assert (out / "adrules_ultra_ads_dnsmasq.conf").is_file()
+    assert not (out / "adrules_ultra_allow_dnsmasq.conf").exists()
+    assert "sing-box" in (out / "manifest.md").read_text(encoding="utf-8")

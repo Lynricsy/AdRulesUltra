@@ -1,6 +1,6 @@
 # AdRulesUltra
 
-[![Build and release AdRulesUltra MRS](https://github.com/Lynricsy/AdRulesUltra/actions/workflows/build-release.yml/badge.svg)](https://github.com/Lynricsy/AdRulesUltra/actions/workflows/build-release.yml)
+[![Build and release AdRulesUltra rulesets](https://github.com/Lynricsy/AdRulesUltra/actions/workflows/build-release.yml/badge.svg)](https://github.com/Lynricsy/AdRulesUltra/actions/workflows/build-release.yml)
 [![Latest release](https://img.shields.io/github/v/release/Lynricsy/AdRulesUltra?label=release&sort=semver&color=7c3aed)](https://github.com/Lynricsy/AdRulesUltra/releases/latest)
 [![Release downloads](https://img.shields.io/github/downloads/Lynricsy/AdRulesUltra/total?label=downloads&color=0891b2)](https://github.com/Lynricsy/AdRulesUltra/releases)
 ![Ads domains](https://img.shields.io/badge/dynamic/json?label=ads%20domains&query=%24.badges.ads_domains&url=https%3A%2F%2Fgithub.com%2FLynricsy%2FAdRulesUltra%2Freleases%2Flatest%2Fdownload%2Fstats.json&color=dc2626)
@@ -9,7 +9,7 @@
 ![Total rules](https://img.shields.io/badge/dynamic/json?label=total%20rules&query=%24.badges.total_rules&url=https%3A%2F%2Fgithub.com%2FLynricsy%2FAdRulesUltra%2Freleases%2Flatest%2Fdownload%2Fstats.json&color=2563eb)
 ![MRS size](https://img.shields.io/badge/dynamic/json?label=main%20MRS&query=%24.badges.ads_mrs_size&url=https%3A%2F%2Fgithub.com%2FLynricsy%2FAdRulesUltra%2Freleases%2Flatest%2Fdownload%2Fstats.json&color=9333ea)
 
-AdRulesUltra 是一个独立的广告与恶意域名规则聚合项目。它定时拉取多个上游 DNS 规则源，合并、去重并转换为 mihomo 可直接加载的 `.mrs` 规则集。
+AdRulesUltra 是一个独立的广告与恶意域名规则聚合项目。它定时拉取多个上游 DNS 规则源，合并、去重并转换为多种客户端可直接使用的规则集，包括 mihomo `.mrs`、sing-box `.srs`、Clash YAML、dnsmasq、SmartDNS、Surge 与 AdGuard 文本。
 
 当前合并的上游：
 
@@ -20,19 +20,28 @@ AdRulesUltra 是一个独立的广告与恶意域名规则聚合项目。它定�
 
 ## 产物
 
-GitHub Actions 会每天拉取上游仓库，生成并发布这些 Release 资产：
+GitHub Actions 会每天拉取上游仓库，生成并发布这些 Release 资产。下列文件名中的 `{kind}` 为 `ads` / `allow` / `malware`：
 
-| 文件 | mihomo behavior | 建议策略 | 说明 |
-|---|---|---|---|
-| `adrules_ultra_allow.mrs` | `domain` | `PASS` | 从 `@@` 例外规则抽取的放行集，只取消本项目的拦截 |
-| `adrules_ultra_ads.mrs` | `domain` | `REJECT` | 多上游广告域名拦截 |
-| `adrules_ultra_malware.mrs` | `domain` | `REJECT` | 恶意域名拦截 |
-| `adrules_ultra_allow_ipcidr.mrs` | `ipcidr` | `PASS` | 从例外规则抽取的 IP，只取消本项目的拦截；非空时发布 |
-| `adrules_ultra_ads_ipcidr.mrs` | `ipcidr` | `REJECT` | 从广告规则抽取的 IP；非空时发布 |
-| `adrules_ultra_malware_ipcidr.mrs` | `ipcidr` | `REJECT` | 从恶意域名规则抽取的 IP；非空时发布 |
-| `manifest.md` | - | - | 本次转换统计和上游提交 |
-| `stats.json` | - | - | README 动态徽章读取的规则数量和 MRS 体积 |
-| `SHA256SUMS` | - | - | Release 资产校验和 |
+| 文件 | 适用 | 说明 |
+|---|---|---|
+| `adrules_ultra_{kind}.mrs` | mihomo / Clash Meta | domain 二进制规则集 |
+| `adrules_ultra_{kind}_ipcidr.mrs` | mihomo / Clash Meta | ipcidr 二进制规则集；非空时发布 |
+| `adrules_ultra_{kind}_singbox.srs` | sing-box >= 1.10 | 二进制 rule-set；exact / suffix / subdomain / wildcard 分别映射 |
+| `adrules_ultra_{kind}_singbox.json` | sing-box source | 编译 `.srs` 的源 JSON |
+| `adrules_ultra_{kind}_clash.yaml` | Clash / mihomo text | `behavior: domain` payload |
+| `adrules_ultra_{kind}_clash_ipcidr.yaml` | Clash / mihomo text | `behavior: ipcidr` payload；非空时发布 |
+| `adrules_ultra_{kind}.txt` | mihomo text | domain text rule-provider，保留 `+.` / `.` 原语义 |
+| `adrules_ultra_{kind}_ipcidr.txt` | mihomo text | ipcidr text rule-provider |
+| `adrules_ultra_{kind}_domains.txt` | Pi-Hole 等 | 仅 exact + suffix 字面域名；不含 subdomain-only / wildcard |
+| `adrules_ultra_{kind}_surge.txt` | Surge | `DOMAIN` / `DOMAIN-SUFFIX` / `DOMAIN-WILDCARD` / `IP-CIDR` |
+| `adrules_ultra_{kind}_surge2.txt` | Surge DOMAIN-SET | exact 与 `.suffix`；不含 subdomain-only / wildcard |
+| `adrules_ultra_{kind}_adguard.txt` | AdGuard / 兼容工具 | exact 保持 hosts 精确；suffix 用 `||`；subdomain-only 用正则 |
+| `adrules_ultra_{kind}_easylist.txt` | AdGuard Home DNS | 与 adguard 文本同形 |
+| `adrules_ultra_{ads,malware}_dnsmasq.conf` | dnsmasq | 仅 suffix 阻断；**不**为 allow 生成 |
+| `adrules_ultra_{ads,malware}_smartdns.conf` | SmartDNS | 仅 suffix 阻断；**不**为 allow 生成 |
+| `manifest.md` | - | 本次转换统计和上游提交 |
+| `stats.json` | - | README 动态徽章读取的规则数量和 MRS 体积 |
+| `SHA256SUMS` | - | Release 资产校验和 |
 
 ## 使用教程
 
@@ -123,7 +132,7 @@ sed 's#  dist/#  #' SHA256SUMS | sha256sum -c --ignore-missing
 
 ### 3. 自动更新来源
 
-仓库自带 GitHub Actions：每天 UTC `20:23` 拉取四个上游，转换 text rule-provider，调用 mihomo 生成 `.mrs`，再发布到 Release。需要立即刷新时，也可以在 Actions 页面手动运行 `Build and release AdRulesUltra MRS`。
+仓库自带 GitHub Actions：每天 UTC `20:23` 拉取四个上游，生成多格式文本，调用 mihomo 生成 `.mrs`、调用 sing-box 生成 `.srs`，再发布到 Release。需要立即刷新时，也可以在 Actions 页面手动运行 `Build and release AdRulesUltra rulesets`。
 
 ## 转换策略
 
@@ -140,6 +149,13 @@ sed 's#  dist/#  #' SHA256SUMS | sha256sum -c --ignore-missing
 - `||ads*-normal*.example.com^` 这类可被 mihomo domain MRS 编译的 wildcard 会保留为 `+.ads*-normal*.example.com`
 - `@@://www.example.com/path`、`@@|blob:https://www.example.com` 会在能解析 URL host 时转入 `adrules_ultra_allow`
 - `$important` 会被接受，但 mihomo 只能靠规则顺序近似优先级
+- 导出其他格式时会区分：
+  - exact: `exact.example.com`
+  - suffix: `+.example.com`（apex + 子域）
+  - subdomain-only: `.example.com`（仅子域，不命中 apex）
+  - wildcard: 含 `*` 的模式
+- dnsmasq / SmartDNS 只接受明确的 suffix 阻断，exact 与 subdomain-only 不会被静默扩大
+- allow 不会输出 dnsmasq / SmartDNS 阻断配置
 
 这些降级转换会尽量减少丢规则，但会比上游原始规则更宽。例如带路径的规则在 mihomo 里只能表达成整个域名命中；带 `@@` 的例外规则建议在 `sub-rules` 内用 `PASS` 近似“取消本项目拦截，然后回到主规则继续分流”。
 
@@ -170,10 +186,14 @@ uv run python -m scripts.build_rulesets \
   --coolapk-1007-reward-commit "$(sha256sum upstream-coolapk-1007-reward.txt | cut -d ' ' -f 1)"
 ```
 
-生成 `.mrs` 需要 mihomo：
+生成 `.mrs` 需要 mihomo，生成 `.srs` 需要 sing-box：
 
 ```bash
 mihomo convert-ruleset domain text dist/adrules_ultra_ads.txt dist/adrules_ultra_ads.mrs
 mihomo convert-ruleset domain text dist/adrules_ultra_allow.txt dist/adrules_ultra_allow.mrs
 mihomo convert-ruleset domain text dist/adrules_ultra_malware.txt dist/adrules_ultra_malware.mrs
+
+sing-box rule-set compile --output dist/adrules_ultra_ads_singbox.srs dist/adrules_ultra_ads_singbox.json
+sing-box rule-set compile --output dist/adrules_ultra_allow_singbox.srs dist/adrules_ultra_allow_singbox.json
+sing-box rule-set compile --output dist/adrules_ultra_malware_singbox.srs dist/adrules_ultra_malware_singbox.json
 ```

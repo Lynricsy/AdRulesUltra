@@ -1,4 +1,4 @@
-name: Build and release AdRulesUltra MRS
+name: Build and release AdRulesUltra rulesets
 
 on:
   workflow_dispatch:
@@ -68,7 +68,30 @@ jobs:
           chmod +x /tmp/mihomo
           /tmp/mihomo -v
 
-      - name: Convert to MRS
+      - name: Install latest sing-box
+        run: |
+          python3 - <<'PY' > /tmp/singbox_url
+          from __future__ import annotations
+
+          import json
+          import urllib.request
+
+          with urllib.request.urlopen("https://api.github.com/repos/SagerNet/sing-box/releases/latest", timeout=30) as response:
+              release = json.load(response)
+          for asset in release["assets"]:
+              name = asset["name"]
+              if name.startswith("sing-box-") and name.endswith("-linux-amd64.tar.gz") and "musl" not in name and "glibc" not in name:
+                  print(asset["browser_download_url"])
+                  raise SystemExit(0)
+          raise SystemExit("missing linux amd64 sing-box asset")
+          PY
+          curl -fsSL "$(cat /tmp/singbox_url)" -o /tmp/sing-box.tgz
+          mkdir -p /tmp/sing-box-extract
+          tar -xzf /tmp/sing-box.tgz -C /tmp/sing-box-extract
+          install -m 755 "$(find /tmp/sing-box-extract -type f -name sing-box | head -n 1)" /tmp/sing-box
+          /tmp/sing-box version
+
+      - name: Convert to MRS and SRS
         run: |
           set -euo pipefail
           for file in dist/adrules_ultra_ads.txt dist/adrules_ultra_allow.txt dist/adrules_ultra_malware.txt; do
@@ -79,6 +102,9 @@ jobs:
               /tmp/mihomo convert-ruleset ipcidr text "$file" "${file%.txt}.mrs"
             fi
           done
+          for file in dist/adrules_ultra_ads_singbox.json dist/adrules_ultra_allow_singbox.json dist/adrules_ultra_malware_singbox.json; do
+            /tmp/sing-box rule-set compile --output "${file%.json}.srs" "$file"
+          done
           uv run python -m scripts.ruleset_stats --output dist
           find dist -maxdepth 1 -type f -size 0 -delete
           find dist -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > dist/SHA256SUMS
@@ -87,7 +113,7 @@ jobs:
       - name: Prepare release notes
         run: |
           {
-            echo "# AdRulesUltra mihomo MRS"
+            echo "# AdRulesUltra multi-format rulesets"
             echo
             echo "- Upstream: https://github.com/liuzq2002/Adguard-Home-For-Magisk-Mod"
             echo "- Upstream commit: \`$ADGUARD_SHA\`"
@@ -106,11 +132,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: snapshot-${{ env.ADGUARD_SHA }}-${{ env.ANTI_AD_SHA }}-${{ env.DEAD_HORSE_SHA }}-${{ env.COOLAPK_1007_REWARD_SHA }}
-          name: AdRulesUltra MRS ${{ env.RELEASE_DATE }}
+          name: AdRulesUltra rulesets ${{ env.RELEASE_DATE }}
           body_path: release-notes.md
           files: |
             dist/*.mrs
+            dist/*.srs
             dist/*.txt
+            dist/*.yaml
+            dist/*.json
+            dist/*.conf
             dist/manifest.md
             dist/stats.json
             dist/SHA256SUMS
