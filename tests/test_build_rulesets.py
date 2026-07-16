@@ -220,6 +220,14 @@ def test_convert_repositories_when_multiple_upstreams_have_rules(tmp_path: Path)
         "@@||anti-safe.example.com^\n||ads.example.com^\n||anti.example.com^\n",
         encoding="utf-8",
     )
+    _ = (anti_ad_source / "anti-ad-clash.yaml").write_text(
+        "payload:\n  - '+.anti-clash.example.com'\n  - '203.0.113.9/32'\n",
+        encoding="utf-8",
+    )
+    _ = (anti_ad_source / "anti-ad-white-for-clash.yaml").write_text(
+        "payload:\n  - '+.anti-white.example.com'\n  - '198.51.100.10/32'\n",
+        encoding="utf-8",
+    )
     _ = reward_source.write_text(
         "#@coolapk 1007\n127.0.0.1 localhost\n0.0.0.0 reward.example.com\n",
         encoding="utf-8",
@@ -232,23 +240,28 @@ def test_convert_repositories_when_multiple_upstreams_have_rules(tmp_path: Path)
         {
             UpstreamKind.ADGUARD_MAGISK: "adguard-sha",
             UpstreamKind.ANTI_AD: "anti-sha",
+            UpstreamKind.DEAD_HORSE: "dead-horse-sha256",
             UpstreamKind.COOLAPK_1007_REWARD: "reward-sha256",
         },
     )
 
     assert result.buckets[RuleKind.ADS].domains == {
         "+.ads.example.com",
-        "+.anti.example.com",
+        "+.anti-clash.example.com",
         "+.custom.example.com",
         "reward.example.com",
     }
+    assert result.buckets[RuleKind.ADS].ipcidrs == {"203.0.113.9/32"}
     assert result.buckets[RuleKind.ALLOW].domains == {
         "+.anti-safe.example.com",
+        "+.anti-white.example.com",
         "+.safe.example.com",
     }
+    assert result.buckets[RuleKind.ALLOW].ipcidrs == {"198.51.100.10/32"}
     assert result.buckets[RuleKind.MALWARE].domains == {"+.bad.example.com"}
     assert result.upstream_commits[UpstreamKind.ADGUARD_MAGISK] == "adguard-sha"
     assert result.upstream_commits[UpstreamKind.ANTI_AD] == "anti-sha"
+    assert result.upstream_commits[UpstreamKind.DEAD_HORSE] == "dead-horse-sha256"
     assert result.upstream_commits[UpstreamKind.COOLAPK_1007_REWARD] == "reward-sha256"
 
 

@@ -13,6 +13,7 @@ class RuleKind(StrEnum):
 class UpstreamKind(StrEnum):
     ADGUARD_MAGISK = "adguard-magisk"
     ANTI_AD = "anti-ad"
+    DEAD_HORSE = "dead-horse"
     COOLAPK_1007_REWARD = "coolapk-1007-reward"
 
 

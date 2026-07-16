@@ -15,6 +15,7 @@ AdRulesUltra 是一个独立的广告与恶意域名规则聚合项目。它定�
 
 - [AdGuard Home For Magisk Mod](https://github.com/liuzq2002/Adguard-Home-For-Magisk-Mod)
 - [anti-AD](https://github.com/privacy-protection-tools/anti-AD)
+- [dead-horse anti-AD whitelist](https://raw.githubusercontent.com/privacy-protection-tools/dead-horse/master/anti-ad-white-for-clash.yaml)
 - [Coolapk 1007 reward](https://raw.githubusercontent.com/lingeringsound/10007/main/reward)
 
 ## 产物
@@ -122,12 +123,14 @@ sed 's#  dist/#  #' SHA256SUMS | sha256sum -c --ignore-missing
 
 ### 3. 自动更新来源
 
-仓库自带 GitHub Actions：每天 UTC `20:23` 拉取三个上游，转换 text rule-provider，调用 mihomo 生成 `.mrs`，再发布到 Release。需要立即刷新时，也可以在 Actions 页面手动运行 `Build and release AdRulesUltra MRS`。
+仓库自带 GitHub Actions：每天 UTC `20:23` 拉取四个上游，转换 text rule-provider，调用 mihomo 生成 `.mrs`，再发布到 Release。需要立即刷新时，也可以在 Actions 页面手动运行 `Build and release AdRulesUltra MRS`。
 
 ## 转换策略
 
 转换器只保留能被 mihomo `domain` / `ipcidr` MRS 安全表达的 DNS 级规则：
 
+- anti-AD 广告主列表直接读取 `anti-ad-clash.yaml` 的 `payload`
+- dead-horse 的 `anti-ad-white-for-clash.yaml` 会合入 `adrules_ultra_allow`
 - `||example.com^` 转为 `+.example.com`
 - `@@||example.com^` 转入 `adrules_ultra_allow`
 - `||203.0.113.1^` 转为 `203.0.113.1/32`
@@ -153,6 +156,7 @@ sed 's#  dist/#  #' SHA256SUMS | sha256sum -c --ignore-missing
 ```bash
 git clone --depth=1 https://github.com/liuzq2002/Adguard-Home-For-Magisk-Mod upstream-adguard
 git clone --depth=1 https://github.com/privacy-protection-tools/anti-AD upstream-anti-ad
+curl -fsSL https://raw.githubusercontent.com/privacy-protection-tools/dead-horse/master/anti-ad-white-for-clash.yaml -o upstream-anti-ad/anti-ad-white-for-clash.yaml
 curl -fsSL https://raw.githubusercontent.com/lingeringsound/10007/main/reward -o upstream-coolapk-1007-reward.txt
 
 uv run python -m scripts.build_rulesets \
@@ -162,6 +166,7 @@ uv run python -m scripts.build_rulesets \
   --output dist \
   --adguard-commit "$(git -C upstream-adguard rev-parse HEAD)" \
   --anti-ad-commit "$(git -C upstream-anti-ad rev-parse HEAD)" \
+  --dead-horse-commit "$(sha256sum upstream-anti-ad/anti-ad-white-for-clash.yaml | cut -d ' ' -f 1)" \
   --coolapk-1007-reward-commit "$(sha256sum upstream-coolapk-1007-reward.txt | cut -d ' ' -f 1)"
 ```
 

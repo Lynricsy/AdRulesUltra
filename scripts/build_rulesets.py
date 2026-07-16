@@ -24,6 +24,7 @@ class BuildArgs:
     output: Path
     adguard_commit: str
     anti_ad_commit: str
+    dead_horse_commit: str
     coolapk_1007_reward_commit: str
 
 
@@ -35,6 +36,7 @@ def parse_args(argv: Sequence[str]) -> BuildArgs:
     _ = parser.add_argument("--output", type=Path, required=True)
     _ = parser.add_argument("--adguard-commit", default="unknown")
     _ = parser.add_argument("--anti-ad-commit", default="unknown")
+    _ = parser.add_argument("--dead-horse-commit", default="unknown")
     _ = parser.add_argument("--coolapk-1007-reward-commit", default="unknown")
     namespace = parser.parse_args(argv)
     parsed: dict[str, object] = vars(namespace)
@@ -44,6 +46,7 @@ def parse_args(argv: Sequence[str]) -> BuildArgs:
     output = parsed["output"]
     adguard_commit = parsed["adguard_commit"]
     anti_ad_commit = parsed["anti_ad_commit"]
+    dead_horse_commit = parsed["dead_horse_commit"]
     coolapk_1007_reward_commit = parsed["coolapk_1007_reward_commit"]
     if not isinstance(adguard_source, Path):
         raise TypeError
@@ -57,6 +60,8 @@ def parse_args(argv: Sequence[str]) -> BuildArgs:
         raise TypeError
     if not isinstance(anti_ad_commit, str):
         raise TypeError
+    if not isinstance(dead_horse_commit, str):
+        raise TypeError
     if not isinstance(coolapk_1007_reward_commit, str):
         raise TypeError
     return BuildArgs(
@@ -66,6 +71,7 @@ def parse_args(argv: Sequence[str]) -> BuildArgs:
         output=output,
         adguard_commit=adguard_commit,
         anti_ad_commit=anti_ad_commit,
+        dead_horse_commit=dead_horse_commit,
         coolapk_1007_reward_commit=coolapk_1007_reward_commit,
     )
 
@@ -79,6 +85,7 @@ def main() -> int:
         {
             UpstreamKind.ADGUARD_MAGISK: args.adguard_commit,
             UpstreamKind.ANTI_AD: args.anti_ad_commit,
+            UpstreamKind.DEAD_HORSE: args.dead_horse_commit,
             UpstreamKind.COOLAPK_1007_REWARD: args.coolapk_1007_reward_commit,
         },
     )

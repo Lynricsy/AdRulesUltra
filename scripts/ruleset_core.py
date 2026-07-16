@@ -60,7 +60,9 @@ def parse_anti_ad(
     collectors: dict[RuleKind, RuleCollector],
     stats: dict[RuleKind, ConversionStats],
 ) -> None:
-    parse_file(source_dir / "anti-ad-adguard.txt", RuleKind.ADS, collectors, stats)
+    parse_clash_payload_file(source_dir / "anti-ad-clash.yaml", RuleKind.ADS, collectors, stats)
+    parse_file(source_dir / "anti-ad-adguard.txt", RuleKind.ALLOW, collectors, stats, exceptions_only=True)
+    parse_clash_payload_file(source_dir / "anti-ad-white-for-clash.yaml", RuleKind.ALLOW, collectors, stats)
 
 
 def parse_coolapk_1007_reward(
@@ -76,13 +78,54 @@ def parse_file(
     default_kind: RuleKind,
     collectors: dict[RuleKind, RuleCollector],
     stats: dict[RuleKind, ConversionStats],
+    *,
+    exceptions_only: bool = False,
 ) -> None:
     if not path.is_file():
         message = f"missing rule file: {path}"
         raise FileNotFoundError(message)
     with path.open("r", encoding="utf-8", errors="replace") as rule_file:
         for raw_line in rule_file:
+            if exceptions_only and not raw_line.lstrip().startswith(EXCEPTION_PREFIX):
+                continue
             parse_rule(raw_line.rstrip("\n"), default_kind, collectors, stats)
+
+
+def parse_clash_payload_file(
+    path: Path,
+    default_kind: RuleKind,
+    collectors: dict[RuleKind, RuleCollector],
+    stats: dict[RuleKind, ConversionStats],
+) -> None:
+    if not path.is_file():
+        message = f"missing Clash payload file: {path}"
+        raise FileNotFoundError(message)
+    in_payload = False
+    with path.open("r", encoding="utf-8", errors="replace") as rule_file:
+        for raw_line in rule_file:
+            line = raw_line.strip()
+            if line == "payload:":
+                in_payload = True
+                continue
+            if not in_payload or not line.startswith("- "):
+                continue
+            parse_clash_payload_value(unquote_yaml_list_value(line[2:]), default_kind, collectors, stats)
+
+
+def parse_clash_payload_value(
+    value: str,
+    default_kind: RuleKind,
+    collectors: dict[RuleKind, RuleCollector],
+    stats: dict[RuleKind, ConversionStats],
+) -> None:
+    stat = stats[default_kind]
+    stat.total += 1
+    if ipcidr := as_ipcidr(value):
+        collectors[default_kind].add_ipcidr(ipcidr)
+        stat.ipcidr += 1
+        return
+    collectors[default_kind].add_domain(value)
+    stat.domain += 1
 
 
 def parse_user_rules(
@@ -167,6 +210,7 @@ def write_manifest(result: ConversionResult, path: Path) -> None:
         "",
         f"- AdGuard Home For Magisk Mod: `{result.upstream_commits[UpstreamKind.ADGUARD_MAGISK]}`",
         f"- anti-AD: `{result.upstream_commits[UpstreamKind.ANTI_AD]}`",
+        f"- dead-horse: `{result.upstream_commits[UpstreamKind.DEAD_HORSE]}`",
         f"- Coolapk 1007 reward: `{result.upstream_commits[UpstreamKind.COOLAPK_1007_REWARD]}`",
         "",
         "- 产物语义: 多上游 DNS 广告规则到 mihomo domain/ipcidr rule-provider 的保守转换。",

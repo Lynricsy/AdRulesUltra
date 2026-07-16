@@ -26,9 +26,11 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/liuzq2002/Adguard-Home-For-Magisk-Mod upstream-adguard
           git clone --depth=1 https://github.com/privacy-protection-tools/anti-AD upstream-anti-ad
+          curl -fsSL https://raw.githubusercontent.com/privacy-protection-tools/dead-horse/master/anti-ad-white-for-clash.yaml -o upstream-anti-ad/anti-ad-white-for-clash.yaml
           curl -fsSL https://raw.githubusercontent.com/lingeringsound/10007/main/reward -o upstream-coolapk-1007-reward.txt
           echo "ADGUARD_SHA=$(git -C upstream-adguard rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "ANTI_AD_SHA=$(git -C upstream-anti-ad rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "DEAD_HORSE_SHA=$(sha256sum upstream-anti-ad/anti-ad-white-for-clash.yaml | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
           echo "COOLAPK_1007_REWARD_SHA=$(sha256sum upstream-coolapk-1007-reward.txt | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
           echo "RELEASE_DATE=$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
 
@@ -41,6 +43,7 @@ jobs:
             --output dist \
             --adguard-commit "$ADGUARD_SHA" \
             --anti-ad-commit "$ANTI_AD_SHA" \
+            --dead-horse-commit "$DEAD_HORSE_SHA" \
             --coolapk-1007-reward-commit "$COOLAPK_1007_REWARD_SHA"
 
       - name: Install latest mihomo
@@ -90,6 +93,8 @@ jobs:
             echo "- Upstream commit: \`$ADGUARD_SHA\`"
             echo "- Upstream: https://github.com/privacy-protection-tools/anti-AD"
             echo "- Upstream commit: \`$ANTI_AD_SHA\`"
+            echo "- Upstream: https://raw.githubusercontent.com/privacy-protection-tools/dead-horse/master/anti-ad-white-for-clash.yaml"
+            echo "- Upstream SHA256: \`$DEAD_HORSE_SHA\`"
             echo "- Upstream: https://raw.githubusercontent.com/lingeringsound/10007/main/reward"
             echo "- Upstream SHA256: \`$COOLAPK_1007_REWARD_SHA\`"
             echo "- Generated at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -100,7 +105,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: snapshot-${{ env.ADGUARD_SHA }}-${{ env.ANTI_AD_SHA }}-${{ env.COOLAPK_1007_REWARD_SHA }}
+          tag_name: snapshot-${{ env.ADGUARD_SHA }}-${{ env.ANTI_AD_SHA }}-${{ env.DEAD_HORSE_SHA }}-${{ env.COOLAPK_1007_REWARD_SHA }}
           name: AdRulesUltra MRS ${{ env.RELEASE_DATE }}
           body_path: release-notes.md
           files: |
