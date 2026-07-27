@@ -493,3 +493,69 @@ def test_write_outputs_emits_multi_format_files(tmp_path: Path) -> None:
     assert (out / "adrules_ultra_ads_dnsmasq.conf").is_file()
     assert not (out / "adrules_ultra_allow_dnsmasq.conf").exists()
     assert "sing-box" in (out / "manifest.md").read_text(encoding="utf-8")
+
+
+def test_dns_safe_build_does_not_contain_claude_apex(tmp_path: Path) -> None:
+    adguard_source = tmp_path / "adguard"
+    anti_ad_source = tmp_path / "anti-ad"
+    reward_source = tmp_path / "reward.txt"
+    filters_dir = adguard_source / "Adguardhome" / "bin" / "data" / "filters"
+    filters_dir.mkdir(parents=True)
+    (adguard_source / "Adguardhome" / "bin").mkdir(exist_ok=True)
+    _ = (filters_dir / "1721861846.txt").write_text(
+        "||claude.ai/sentry^\n||ads.example.com^\n",
+        encoding="utf-8",
+    )
+    _ = (filters_dir / "1735560833.txt").write_text("||bad.example.com^\n", encoding="utf-8")
+    _ = (filters_dir / "1721861844.txt").write_text("@@||safe.example.com^\n", encoding="utf-8")
+    _ = (adguard_source / "Adguardhome" / "bin" / "AdGuardHome.yaml").write_text(
+        "user_rules:\n  - '||custom.example.com^'\n",
+        encoding="utf-8",
+    )
+    anti_ad_source.mkdir()
+    _ = (anti_ad_source / "anti-ad-adguard.txt").write_text("@@||anti-safe.example.com^\n", encoding="utf-8")
+    _ = (anti_ad_source / "anti-ad-clash.yaml").write_text(
+        "payload:\n  - '+.anti-clash.example.com'\n",
+        encoding="utf-8",
+    )
+    _ = (anti_ad_source / "anti-ad-white-for-clash.yaml").write_text(
+        "payload:\n  - '+.anti-white.example.com'\n",
+        encoding="utf-8",
+    )
+    _ = reward_source.write_text("0.0.0.0 reward.example.com\n", encoding="utf-8")
+
+    result = convert_repositories(
+        adguard_source,
+        anti_ad_source,
+        reward_source,
+        {
+            UpstreamKind.ADGUARD_MAGISK: "adguard-sha",
+            UpstreamKind.ANTI_AD: "anti-sha",
+            UpstreamKind.DEAD_HORSE: "dead-horse-sha256",
+            UpstreamKind.COOLAPK_1007_REWARD: "reward-sha256",
+        },
+    )
+    out = tmp_path / "dist"
+    write_outputs(result, out)
+
+    assert "+.claude.ai" not in result.buckets[RuleKind.ADS].domains
+    assert "claude.ai" not in result.buckets[RuleKind.ADS].domains
+    assert result.stats[RuleKind.ADS].unsupported_path >= 1
+
+    forbidden_tokens = ("+.claude.ai", "||claude.ai^", "DOMAIN-SUFFIX,claude.ai", "address=/claude.ai/")
+    ads_text_files = (
+        "adrules_ultra_ads.txt",
+        "adrules_ultra_ads_clash.yaml",
+        "adrules_ultra_ads_domains.txt",
+        "adrules_ultra_ads_surge.txt",
+        "adrules_ultra_ads_surge2.txt",
+        "adrules_ultra_ads_dnsmasq.conf",
+        "adrules_ultra_ads_smartdns.conf",
+        "adrules_ultra_ads_adguard.txt",
+        "adrules_ultra_ads_easylist.txt",
+        "adrules_ultra_ads_singbox.json",
+    )
+    for relative_name in ads_text_files:
+        content = (out / relative_name).read_text(encoding="utf-8")
+        assert all(token not in content for token in forbidden_tokens)
+        assert "claude.ai" not in content
