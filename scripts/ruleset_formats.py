@@ -19,6 +19,7 @@ from scripts.ruleset_domain import (
     to_surge2_item,
     to_surge_rule,
 )
+from scripts.ruleset_mrs import EMPTY_IPCIDR_TEXT_PLACEHOLDER
 from scripts.ruleset_types import RuleBuckets, RuleKind
 
 OUTPUT_PREFIX: Final[str] = "adrules_ultra"
@@ -92,7 +93,13 @@ def write_mihomo_text(
         output_dir / f"{OUTPUT_PREFIX}_{kind.value}.txt",
         (to_mihomo_item(entry) for entry in domain_entries),
     )
-    write_lines(output_dir / f"{OUTPUT_PREFIX}_{kind.value}_ipcidr.txt", ipcidrs)
+    ipcidr_path = output_dir / f"{OUTPUT_PREFIX}_{kind.value}_ipcidr.txt"
+    if ipcidrs:
+        write_lines(ipcidr_path, ipcidrs)
+    else:
+        # 非 0 字节, 保证 Release 始终可下载; 注释不会被 mihomo 当成规则。
+        _ = ipcidr_path.write_text(EMPTY_IPCIDR_TEXT_PLACEHOLDER, encoding="utf-8")
+
 
 def write_clash_yaml(
     output_dir: Path,
@@ -107,17 +114,13 @@ def write_clash_yaml(
         behavior="domain",
         items=[to_mihomo_item(entry) for entry in domain_entries],
     )
-    ipcidr_path = output_dir / f"{OUTPUT_PREFIX}_{kind.value}_clash_ipcidr.yaml"
-    if ipcidrs:
-        _write_clash_payload_yaml(
-            ipcidr_path,
-            kind,
-            behavior="ipcidr",
-            items=list(ipcidrs),
-        )
-    else:
-        # 删除同输出目录上一次构建残留的 ipcidr YAML。
-        ipcidr_path.unlink(missing_ok=True)
+    # 空集合也发布 payload: [] , 避免客户端下载 404。
+    _write_clash_payload_yaml(
+        output_dir / f"{OUTPUT_PREFIX}_{kind.value}_clash_ipcidr.yaml",
+        kind,
+        behavior="ipcidr",
+        items=list(ipcidrs),
+    )
 
 def _write_clash_payload_yaml(
     path: Path,

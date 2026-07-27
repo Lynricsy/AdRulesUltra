@@ -6,8 +6,9 @@ from pathlib import Path
 from scripts.ruleset_core import convert_repositories, parse_rule, write_outputs
 from scripts.ruleset_domain import DomainMatchKind, classify_domain, to_domain_regex
 from scripts.ruleset_formats import write_kind_text_formats
+from scripts.ruleset_mrs import EMPTY_IPCIDR_MRS_BYTES, ensure_ipcidr_mrs_from_text
 from scripts.ruleset_parser import parse_adguard_values
-from scripts.ruleset_stats import build_stats_payload, expected_release_assets, release_assets_complete
+from scripts.ruleset_stats import build_stats_payload, count_lines, expected_release_assets, release_assets_complete
 from scripts.ruleset_types import (
     ConversionStats,
     RuleBuckets,
@@ -336,6 +337,37 @@ def test_build_stats_payload_when_release_assets_exist(tmp_path: Path) -> None:
     assert "allow_ipcidr" not in payload["mrs"]
 
 
+
+
+def test_count_lines_ignores_comment_only_ipcidr_placeholder(tmp_path: Path) -> None:
+    path = tmp_path / "adrules_ultra_allow_ipcidr.txt"
+    _ = path.write_text("# empty ipcidr ruleset\n", encoding="utf-8")
+    assert count_lines(path) == 0
+
+
+def test_ensure_ipcidr_mrs_writes_empty_binary_for_comment_only_text(tmp_path: Path) -> None:
+    text_path = tmp_path / "allow_ipcidr.txt"
+    mrs_path = tmp_path / "allow_ipcidr.mrs"
+    _ = text_path.write_text("# empty ipcidr ruleset\n", encoding="utf-8")
+
+    mode = ensure_ipcidr_mrs_from_text(text_path, mrs_path)
+
+    assert mode == "empty"
+    assert mrs_path.read_bytes() == EMPTY_IPCIDR_MRS_BYTES
+
+
+def test_write_kind_text_formats_emits_empty_allow_ipcidr_assets(tmp_path: Path) -> None:
+    buckets = RuleBuckets(domains=frozenset({"+.safe.example.com"}))
+    _ = write_kind_text_formats(RuleKind.ALLOW, buckets, tmp_path)
+
+    ipcidr_txt = (tmp_path / "adrules_ultra_allow_ipcidr.txt").read_text(encoding="utf-8")
+    assert ipcidr_txt.startswith("#")
+    assert count_lines(tmp_path / "adrules_ultra_allow_ipcidr.txt") == 0
+    clash_ip = (tmp_path / "adrules_ultra_allow_clash_ipcidr.yaml").read_text(encoding="utf-8")
+    assert "(ipcidr)" in clash_ip
+    assert "payload:" in clash_ip
+    assert "[]" in clash_ip
+
 def test_expected_release_assets_includes_checksum_file_itself() -> None:
     checksum_text = (
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  dist/adrules_ultra_ads.txt\n"
@@ -469,14 +501,17 @@ def test_write_kind_text_formats_skips_allow_dns_sinkhole(tmp_path: Path) -> Non
     assert "@@exact.safe.example.com" in adguard
 
 
-def test_write_kind_text_formats_removes_stale_clash_ipcidr(tmp_path: Path) -> None:
-    stale = tmp_path / "adrules_ultra_malware_clash_ipcidr.yaml"
-    _ = stale.write_text("payload:\n  - '203.0.113.8/32'\n", encoding="utf-8")
+def test_write_kind_text_formats_keeps_empty_clash_ipcidr(tmp_path: Path) -> None:
     buckets = RuleBuckets(domains=frozenset({"+.bad.example.com"}))
 
     _ = write_kind_text_formats(RuleKind.MALWARE, buckets, tmp_path)
 
-    assert not stale.exists()
+    empty_ip = (tmp_path / "adrules_ultra_malware_clash_ipcidr.yaml").read_text(encoding="utf-8")
+    assert "(ipcidr)" in empty_ip
+    assert "payload:" in empty_ip
+    assert "[]" in empty_ip
+    assert "- " not in empty_ip
+    assert (tmp_path / "adrules_ultra_malware_ipcidr.txt").read_text(encoding="utf-8").startswith("#")
     assert (tmp_path / "adrules_ultra_malware_clash.yaml").is_file()
 
 

@@ -84,7 +84,8 @@ def count_lines(path: Path) -> int:
     count = 0
     with path.open("r", encoding="utf-8") as output_file:
         for line in output_file:
-            if line.strip():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
                 count += 1
     return count
 
