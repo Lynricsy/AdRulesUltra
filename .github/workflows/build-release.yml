@@ -24,15 +24,31 @@ jobs:
 
       - name: Fetch upstream rules
         run: |
+          set -euo pipefail
           git clone --depth=1 https://github.com/liuzq2002/Adguard-Home-For-Magisk-Mod upstream-adguard
           git clone --depth=1 https://github.com/privacy-protection-tools/anti-AD upstream-anti-ad
           curl -fsSL https://raw.githubusercontent.com/privacy-protection-tools/dead-horse/master/anti-ad-white-for-clash.yaml -o upstream-anti-ad/anti-ad-white-for-clash.yaml
           curl -fsSL https://raw.githubusercontent.com/lingeringsound/10007/main/reward -o upstream-coolapk-1007-reward.txt
-          echo "ADGUARD_SHA=$(git -C upstream-adguard rev-parse HEAD)" >> "$GITHUB_ENV"
-          echo "ANTI_AD_SHA=$(git -C upstream-anti-ad rev-parse HEAD)" >> "$GITHUB_ENV"
-          echo "DEAD_HORSE_SHA=$(sha256sum upstream-anti-ad/anti-ad-white-for-clash.yaml | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
-          echo "COOLAPK_1007_REWARD_SHA=$(sha256sum upstream-coolapk-1007-reward.txt | cut -d ' ' -f 1)" >> "$GITHUB_ENV"
-          echo "RELEASE_DATE=$(date -u +%Y%m%d)" >> "$GITHUB_ENV"
+
+          ADGUARD_SHA="$(git -C upstream-adguard rev-parse HEAD)"
+          ANTI_AD_SHA="$(git -C upstream-anti-ad rev-parse HEAD)"
+          DEAD_HORSE_SHA="$(sha256sum upstream-anti-ad/anti-ad-white-for-clash.yaml | cut -d ' ' -f 1)"
+          COOLAPK_1007_REWARD_SHA="$(sha256sum upstream-coolapk-1007-reward.txt | cut -d ' ' -f 1)"
+          CONVERTER_SHA="${GITHUB_SHA}"
+          RELEASE_DATE="$(date -u +%Y%m%d)"
+
+          {
+            echo "ADGUARD_SHA=${ADGUARD_SHA}"
+            echo "ANTI_AD_SHA=${ANTI_AD_SHA}"
+            echo "DEAD_HORSE_SHA=${DEAD_HORSE_SHA}"
+            echo "COOLAPK_1007_REWARD_SHA=${COOLAPK_1007_REWARD_SHA}"
+            echo "CONVERTER_SHA=${CONVERTER_SHA}"
+            echo "RELEASE_DATE=${RELEASE_DATE}"
+          } >> "$GITHUB_ENV"
+
+          echo "converter: ${CONVERTER_SHA}"
+          echo "adguard: ${ADGUARD_SHA}"
+          echo "anti-ad: ${ANTI_AD_SHA}"
 
       - name: Build text rule providers
         run: |
@@ -110,11 +126,60 @@ jobs:
           find dist -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > dist/SHA256SUMS
           sha256sum -c dist/SHA256SUMS
 
+          # 指纹覆盖转换器/上游/编译产物; 短 tag 取最终清单摘要前 16 位。
+          CONTENT_ID="$(sha256sum dist/SHA256SUMS | cut -c1-16)"
+          RELEASE_TAG="snapshot-${CONTENT_ID}"
+          {
+            echo "CONTENT_ID=${CONTENT_ID}"
+            echo "RELEASE_TAG=${RELEASE_TAG}"
+          } >> "$GITHUB_ENV"
+          echo "release tag candidate: ${RELEASE_TAG}"
+
+      - name: Decide whether snapshot is already complete
+        id: snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          publish=true
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "found existing release: $RELEASE_TAG"
+            rm -rf /tmp/existing-release
+            mkdir -p /tmp/existing-release
+            if gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" -p SHA256SUMS -D /tmp/existing-release; then
+              remote_assets="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort)"
+              local_assets="$(cut -c67- dist/SHA256SUMS | xargs -n1 basename | sort)"
+              if cmp -s dist/SHA256SUMS /tmp/existing-release/SHA256SUMS \
+                && [ "$remote_assets" = "$local_assets" ]; then
+                echo "existing release is complete; skip publish"
+                publish=false
+              else
+                echo "existing release is incomplete or stale; delete and rebuild"
+                echo "remote assets:"
+                echo "$remote_assets"
+                echo "local assets:"
+                echo "$local_assets"
+                gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+              fi
+            else
+              echo "existing release missing SHA256SUMS; delete and rebuild"
+              gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+            fi
+          else
+            echo "new snapshot: $RELEASE_TAG"
+          fi
+
+          echo "publish=${publish}" >> "$GITHUB_OUTPUT"
+
       - name: Prepare release notes
+        if: steps.snapshot.outputs.publish == 'true'
         run: |
           {
             echo "# AdRulesUltra multi-format rulesets"
             echo
+            echo "- Release tag: \`$RELEASE_TAG\`"
+            echo "- Content id: \`$CONTENT_ID\` (sha256 of dist/SHA256SUMS, first 16 hex)"
+            echo "- Converter commit: \`$CONVERTER_SHA\`"
             echo "- Upstream: https://github.com/liuzq2002/Adguard-Home-For-Magisk-Mod"
             echo "- Upstream commit: \`$ADGUARD_SHA\`"
             echo "- Upstream: https://github.com/privacy-protection-tools/anti-AD"
@@ -129,10 +194,11 @@ jobs:
           } > release-notes.md
 
       - name: Publish release
+        if: steps.snapshot.outputs.publish == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: snapshot-${{ env.ADGUARD_SHA }}-${{ env.ANTI_AD_SHA }}-${{ env.DEAD_HORSE_SHA }}-${{ env.COOLAPK_1007_REWARD_SHA }}
-          name: AdRulesUltra rulesets ${{ env.RELEASE_DATE }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: AdRulesUltra rulesets ${{ env.RELEASE_DATE }} (${{ env.CONTENT_ID }})
           body_path: release-notes.md
           files: |
             dist/*.mrs
@@ -145,4 +211,5 @@ jobs:
             dist/stats.json
             dist/SHA256SUMS
           make_latest: true
-          overwrite_files: true
+          # 同 content fingerprint 已完整则跳过; 残缺 release 会先删除再建, 不覆盖 assets。
+          overwrite_files: false
