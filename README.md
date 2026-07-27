@@ -25,13 +25,13 @@ GitHub Actions 会每天拉取上游仓库，生成并发布这些 Release 资�
 | 文件 | 适用 | 说明 |
 |---|---|---|
 | `adrules_ultra_{kind}.mrs` | mihomo / Clash Meta | domain 二进制规则集 |
-| `adrules_ultra_{kind}_ipcidr.mrs` | mihomo / Clash Meta | ipcidr 二进制规则集；非空时发布 |
+| `adrules_ultra_{kind}_ipcidr.mrs` | mihomo / Clash Meta | ipcidr 二进制；**仅 text 非空时发布** |
 | `adrules_ultra_{kind}_singbox.srs` | sing-box >= 1.10 | 二进制 rule-set；exact / suffix / subdomain / wildcard 分别映射 |
 | `adrules_ultra_{kind}_singbox.json` | sing-box source | 编译 `.srs` 的源 JSON |
 | `adrules_ultra_{kind}_clash.yaml` | Clash / mihomo text | `behavior: domain` payload |
-| `adrules_ultra_{kind}_clash_ipcidr.yaml` | Clash / mihomo text | `behavior: ipcidr` payload；非空时发布 |
+| `adrules_ultra_{kind}_clash_ipcidr.yaml` | Clash / mihomo text | `behavior: ipcidr`；**仅非空时发布** |
 | `adrules_ultra_{kind}.txt` | mihomo text | domain text rule-provider，保留 `+.` / `.` 原语义 |
-| `adrules_ultra_{kind}_ipcidr.txt` | mihomo text | ipcidr text rule-provider |
+| `adrules_ultra_{kind}_ipcidr.txt` | mihomo text | ipcidr text；**空文件不会出现在 Release** |
 | `adrules_ultra_{kind}_domains.txt` | Pi-Hole 等 | 仅 exact + suffix 字面域名；不含 subdomain-only / wildcard |
 | `adrules_ultra_{kind}_surge.txt` | Surge | `DOMAIN` / `DOMAIN-SUFFIX` / `DOMAIN-WILDCARD` / `IP-CIDR` |
 | `adrules_ultra_{kind}_surge2.txt` | Surge DOMAIN-SET | exact 与 `.suffix`；不含 subdomain-only / wildcard |
@@ -59,13 +59,15 @@ rule-providers:
     url: https://github.com/Lynricsy/AdRulesUltra/releases/latest/download/adrules_ultra_allow.mrs
     interval: 86400
 
-  adrules_ultra_allow_ipcidr:
-    type: http
-    behavior: ipcidr
-    format: mrs
-    path: ./ruleset/adrules_ultra_allow_ipcidr.mrs
-    url: https://github.com/Lynricsy/AdRulesUltra/releases/latest/download/adrules_ultra_allow_ipcidr.mrs
-    interval: 86400
+  # 可选: 仅当 Release 含 adrules_ultra_allow_ipcidr.mrs 时启用
+  # 当前上游 allow 的 ipcidr 计数常为 0, latest 可能不发布该资产。
+  # adrules_ultra_allow_ipcidr:
+  #   type: http
+  #   behavior: ipcidr
+  #   format: mrs
+  #   path: ./ruleset/adrules_ultra_allow_ipcidr.mrs
+  #   url: https://github.com/Lynricsy/AdRulesUltra/releases/latest/download/adrules_ultra_allow_ipcidr.mrs
+  #   interval: 86400
 
   adrules_ultra_ads:
     type: http
@@ -100,14 +102,15 @@ rules:
 sub-rules:
   adrules_ultra_filter:
     - RULE-SET,adrules_ultra_allow,PASS
-    - RULE-SET,adrules_ultra_allow_ipcidr,PASS,no-resolve
+    # - RULE-SET,adrules_ultra_allow_ipcidr,PASS,no-resolve  # 可选, 见上方
     - RULE-SET,adrules_ultra_ads,REJECT
     - RULE-SET,adrules_ultra_ads_ipcidr,REJECT,no-resolve
     - RULE-SET,adrules_ultra_malware,REJECT
     - MATCH,PASS
 ```
 
-上游当前样本中 `adrules_ultra_malware_ipcidr.txt` 为空，GitHub Actions 只会在对应 text 非空时发布 `.mrs`。如果后续 Release 出现 `adrules_ultra_malware_ipcidr.mrs`，再按同样格式添加 `behavior: ipcidr` provider 即可。
+`*_ipcidr` 资产是**按内容可选发布**的：workflow 只在对应 `*_ipcidr.txt` 非空时编译 `.mrs`，并会删除 0 字节空文件，避免 GitHub Release 拒收空 asset。  
+当前 latest 统计示例：`allow.ipcidrs = 0`、`malware.ipcidrs = 0`，所以 `adrules_ultra_allow_ipcidr.*` / `adrules_ultra_malware_ipcidr.*` 不会出现；`ads_ipcidr` 有数据则仍会发布。若某次 Release 重新出现这些文件，再按注释打开对应 provider 即可。
 
 不要把 `adrules_ultra_allow` 直接写成 `DIRECT`，否则命中 `@@` 例外的域名会强制直连，无法继续匹配你后面的代理规则。也不要把 `PASS` 白名单和 `REJECT` 拦截规则平铺在同一个 `rules` 列表里，否则白名单 `PASS` 后仍可能继续命中后面的广告拦截规则。
 
@@ -121,14 +124,16 @@ base=https://github.com/Lynricsy/AdRulesUltra/releases/latest/download
 curl -fLO "$base/adrules_ultra_allow.mrs"
 curl -fLO "$base/adrules_ultra_ads.mrs"
 curl -fLO "$base/adrules_ultra_malware.mrs"
-curl -fLO "$base/adrules_ultra_allow_ipcidr.mrs"
 curl -fLO "$base/adrules_ultra_ads_ipcidr.mrs"
+# 可选: 仅当 Release 实际包含时再下载, 否则 curl -f 会 404
+# curl -fLO "$base/adrules_ultra_allow_ipcidr.mrs"
+# curl -fLO "$base/adrules_ultra_malware_ipcidr.mrs"
 curl -fLO "$base/SHA256SUMS"
 
 sed 's#  dist/#  #' SHA256SUMS | sha256sum -c --ignore-missing
 ```
 
-`SHA256SUMS` 里会列出本次 Release 的全部资产；`--ignore-missing` 允许你只下载自己启用的规则集。
+`SHA256SUMS` 里会列出本次 Release 的全部资产；`--ignore-missing` 允许你只下载自己启用的规则集。空的 `*_ipcidr` 不会进入清单，也不应写死为必下文件。
 
 ### 3. 自动更新来源
 
