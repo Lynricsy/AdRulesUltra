@@ -86,6 +86,7 @@ jobs:
             done
           done
 
+      - name: Install latest mihomo
         run: |
           python3 - <<'PY' > /tmp/mihomo_url
           from __future__ import annotations
