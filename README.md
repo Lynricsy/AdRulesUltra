@@ -134,6 +134,13 @@ sed 's#  dist/#  #' SHA256SUMS | sha256sum -c --ignore-missing
 
 仓库自带 GitHub Actions：每天 UTC `20:23` 拉取四个上游，生成多格式文本，调用 mihomo 生成 `.mrs`、调用 sing-box 生成 `.srs`，再发布到 Release。需要立即刷新时，也可以在 Actions 页面手动运行 `Build and release AdRulesUltra rulesets`。
 
+Release tag 约定：
+
+- **新 release** 使用日期 tag：`snapshot-YYYYMMDD`（UTC 日期），例如 `snapshot-20260727`
+- release notes 会额外记录 `CONTENT_ID`（`dist/SHA256SUMS` 的 sha256 前 16 位），用于追溯转换器 + 上游 + 编译产物
+- 同日重跑：若远端同 tag 资产完整且 `SHA256SUMS` 一致则跳过发布；残缺或不一致会删除后重建，不再覆盖旧 asset
+- **历史长 tag**（拼接上游完整哈希的旧格式）会保留，不影响 `releases/latest` 下载
+
 ## 转换策略
 
 转换器只保留能被 mihomo `domain` / `ipcidr` MRS 安全表达的 DNS 级规则：

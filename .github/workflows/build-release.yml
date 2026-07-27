@@ -126,14 +126,15 @@ jobs:
           find dist -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > dist/SHA256SUMS
           sha256sum -c dist/SHA256SUMS
 
-          # 指纹覆盖转换器/上游/编译产物; 短 tag 取最终清单摘要前 16 位。
+          # 日期 tag 便于阅读; content id 只写在 notes 供追溯。
+          # 同日重跑: 完整且 checksum 一致则跳过, 否则删残缺/旧产物后重建。
           CONTENT_ID="$(sha256sum dist/SHA256SUMS | cut -c1-16)"
-          RELEASE_TAG="snapshot-${CONTENT_ID}"
+          RELEASE_TAG="snapshot-${RELEASE_DATE}"
           {
             echo "CONTENT_ID=${CONTENT_ID}"
             echo "RELEASE_TAG=${RELEASE_TAG}"
           } >> "$GITHUB_ENV"
-          echo "release tag candidate: ${RELEASE_TAG}"
+          echo "release tag candidate: ${RELEASE_TAG} (content ${CONTENT_ID})"
 
       - name: Decide whether snapshot is already complete
         id: snapshot
@@ -199,7 +200,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          name: AdRulesUltra rulesets ${{ env.RELEASE_DATE }} (${{ env.CONTENT_ID }})
+          name: AdRulesUltra rulesets ${{ env.RELEASE_DATE }}
           body_path: release-notes.md
           files: |
             dist/*.mrs
