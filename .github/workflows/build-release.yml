@@ -134,6 +134,8 @@ jobs:
           # 用本次下载的 mihomo 加载全部 domain/ipcidr MRS, 防止空集静态 blob 与内核格式漂移。
           uv run python -m scripts.validate_mrs_bundle --dist dist --mihomo /tmp/mihomo
           uv run python -m scripts.ruleset_stats --output dist
+          # ipcidr 空集已是非 0 字节占位; 仍清理其他格式可能产生的 0 字节文件, 避免 Release 拒收。
+          find dist -maxdepth 1 -type f -size 0 -delete
           find dist -maxdepth 1 -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > dist/SHA256SUMS
           sha256sum -c dist/SHA256SUMS
 
