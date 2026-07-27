@@ -75,35 +75,39 @@ def test_parse_ipcidr_rule_when_cidr_literal() -> None:
     assert collectors[RuleKind.ADS].ipcidrs == {"216.239.35.0/24"}
 
 
-def test_parse_domain_rule_when_host_has_path() -> None:
+def test_skip_block_rule_when_host_has_path() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
 
+    parse_rule("||claude.ai/sentry^", RuleKind.ADS, collectors, stats)
     parse_rule("||example.com/path.js^", RuleKind.ADS, collectors, stats)
 
-    assert collectors[RuleKind.ADS].domains == {"+.example.com"}
-    assert stats[RuleKind.ADS].unsupported_path == 0
+    assert collectors[RuleKind.ADS].domains == set()
+    assert stats[RuleKind.ADS].unsupported_path == 2
+    assert "+.claude.ai" not in collectors[RuleKind.ADS].domains
 
 
-def test_parse_domain_rule_when_path_contains_url() -> None:
+def test_skip_allow_rule_when_path_contains_url() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
 
     parse_rule("@@||ib.adnxs.com/getuid?http://*.pch.com/", RuleKind.ADS, collectors, stats)
 
-    assert collectors[RuleKind.ALLOW].domains == {"+.ib.adnxs.com"}
+    assert collectors[RuleKind.ALLOW].domains == set()
+    assert stats[RuleKind.ALLOW].unsupported_path == 1
 
 
-def test_parse_domain_rule_when_rule_starts_with_scheme_relative_url() -> None:
+def test_skip_allow_rule_when_rule_starts_with_scheme_relative_url_path() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
 
     parse_rule("@@://www.fedex.com/Tracking?", RuleKind.ADS, collectors, stats)
 
-    assert collectors[RuleKind.ALLOW].domains == {"www.fedex.com"}
+    assert collectors[RuleKind.ALLOW].domains == set()
+    assert stats[RuleKind.ALLOW].unsupported_path == 1
 
 
-def test_parse_domain_rule_when_rule_starts_with_blob_url() -> None:
+def test_parse_allow_domain_when_rule_starts_with_blob_url_host_only() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
 
@@ -112,32 +116,47 @@ def test_parse_domain_rule_when_rule_starts_with_blob_url() -> None:
     assert collectors[RuleKind.ALLOW].domains == {"www.twitch.tv"}
 
 
-def test_parse_allow_domain_when_exception_with_http_url_modifier() -> None:
+def test_skip_allow_rule_when_exception_with_http_url_modifier() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
 
     parse_rule("@@https://media.amazon.map.fastly.net^$script", RuleKind.ADS, collectors, stats)
 
-    assert collectors[RuleKind.ALLOW].domains == {"media.amazon.map.fastly.net"}
+    assert collectors[RuleKind.ALLOW].domains == set()
+    assert stats[RuleKind.ALLOW].unsupported_modifier == 1
 
 
-def test_parse_allow_domain_when_exception_with_websocket_url_modifier() -> None:
+def test_skip_allow_rule_when_exception_with_websocket_url_modifier() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
 
     parse_rule("@@ws://localhost^$stealth,domain=play.sooplive.co.kr", RuleKind.ADS, collectors, stats)
 
-    assert collectors[RuleKind.ALLOW].domains == {"localhost"}
+    assert collectors[RuleKind.ALLOW].domains == set()
+    assert stats[RuleKind.ALLOW].unsupported_modifier == 1
 
 
-def test_parse_domain_rule_when_host_has_port() -> None:
+def test_skip_block_rule_when_host_has_port() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
 
     parse_rule("||ad.example.com:8443^", RuleKind.ADS, collectors, stats)
+    parse_rule("||example.com:8443^", RuleKind.ADS, collectors, stats)
 
-    assert collectors[RuleKind.ADS].domains == {"+.ad.example.com"}
+    assert collectors[RuleKind.ADS].domains == set()
+    assert stats[RuleKind.ADS].unsupported_port == 2
 
+
+def test_skip_block_rule_when_host_has_query_or_fragment() -> None:
+    collectors = {kind: RuleCollector() for kind in RuleKind}
+    stats = {kind: ConversionStats() for kind in RuleKind}
+
+    parse_rule("||example.com?x=1^", RuleKind.ADS, collectors, stats)
+    parse_rule("||example.com#section^", RuleKind.ADS, collectors, stats)
+    parse_rule("||example.com/^", RuleKind.ADS, collectors, stats)
+
+    assert collectors[RuleKind.ADS].domains == set()
+    assert stats[RuleKind.ADS].unsupported_path == 3
 
 def test_parse_domain_rule_when_safe_wildcard_suffix_rule() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
@@ -157,14 +176,14 @@ def test_parse_domain_rule_when_wildcard_label_suffix_rule() -> None:
     assert collectors[RuleKind.ADS].domains == {"+.xbox.*.microsoft.com"}
 
 
-def test_parse_allow_domain_when_exception_with_modifier_has_host() -> None:
+def test_skip_allow_rule_when_exception_with_modifier_has_host() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
 
     parse_rule("@@||cdn.example.com/path.js$script,domain=site.example", RuleKind.ADS, collectors, stats)
 
-    assert collectors[RuleKind.ALLOW].domains == {"+.cdn.example.com"}
-
+    assert collectors[RuleKind.ALLOW].domains == set()
+    assert stats[RuleKind.ALLOW].unsupported_modifier == 1
 
 def test_skip_allow_rule_when_domain_modifier_has_no_host() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}

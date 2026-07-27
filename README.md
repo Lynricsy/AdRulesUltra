@@ -145,9 +145,9 @@ sed 's#  dist/#  #' SHA256SUMS | sha256sum -c --ignore-missing
 - `||203.0.113.1^` 转为 `203.0.113.1/32`
 - `||216.239.35.0/24^` 转为 `216.239.35.0/24`
 - `0.0.0.0 ads.example.com` 这类 hosts 规则转为 `ads.example.com`
-- `||example.com/path.js^`、`||example.com:8443^` 会在能明确抽出 host 时降级为 `+.example.com`
+- `||example.com/path.js^`、`||example.com:8443^` 这类带 URL 路径/端口的规则会被跳过，不再静默扩大为整域拦截
 - `||ads*-normal*.example.com^` 这类可被 mihomo domain MRS 编译的 wildcard 会保留为 `+.ads*-normal*.example.com`
-- `@@://www.example.com/path`、`@@|blob:https://www.example.com` 会在能解析 URL host 时转入 `adrules_ultra_allow`
+- `@@|blob:https://www.example.com` 这类仅有 host、无路径/端口的 URL 例外会转入 `adrules_ultra_allow`
 - `$important` 会被接受，但 mihomo 只能靠规则顺序近似优先级
 - 导出其他格式时会区分：
   - exact: `exact.example.com`
@@ -157,14 +157,15 @@ sed 's#  dist/#  #' SHA256SUMS | sha256sum -c --ignore-missing
 - dnsmasq / SmartDNS 只接受明确的 suffix 阻断，exact 与 subdomain-only 不会被静默扩大
 - allow 不会输出 dnsmasq / SmartDNS 阻断配置
 
-这些降级转换会尽量减少丢规则，但会比上游原始规则更宽。例如带路径的规则在 mihomo 里只能表达成整个域名命中；带 `@@` 的例外规则建议在 `sub-rules` 内用 `PASS` 近似“取消本项目拦截，然后回到主规则继续分流”。
+默认策略是保守转换：DNS/domain 规则集无法完整表达的语义一律跳过，而不是把路径、端口或修饰符降级成整域命中。带 `@@` 的例外规则建议在 `sub-rules` 内用 `PASS` 近似“取消本项目拦截，然后回到主规则继续分流”。
 
 这些规则会被跳过并写入统计：
 
 - 正则规则，例如 `/example.*/`
+- 带 URL 路径、query、fragment 或显式端口的规则（blocking / exception 均跳过）
 - 纯路径规则或无法解析 host 的 URL 规则
 - 只有 `$domain=` / `$app=` / `$client=` 这类条件、但没有拦截目标 host 的规则
-- mihomo MRS 无法表达的 DNS 修饰符，例如 `$client`、`$dnstype`、`$dnsrewrite`
+- 无法在 DNS 层完整表达的修饰符规则，例如 `$script`、`$client`、`$dnstype`、`$dnsrewrite`
 - 无法安全映射到 Clash wildcard 的复杂模式
 
 ## 本地运行

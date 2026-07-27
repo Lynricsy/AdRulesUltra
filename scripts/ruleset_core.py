@@ -201,15 +201,15 @@ def write_manifest(result: ConversionResult, path: Path) -> None:
         "- dnsmasq / SmartDNS 仅输出 ads、malware 的 suffix 阻断规则; exact 与 wildcard 不会静默扩大。",
         "- allow 不生成 dnsmasq / SmartDNS 阻断文件。",
         "",
-        "| 集合 | domain | ipcidr | 跳过 | 正则 | 修饰符 | 路径 | 模式 |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| 集合 | domain | ipcidr | 跳过 | 正则 | 修饰符 | 路径 | 端口 | 模式 |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for kind in RuleKind:
         stat = result.stats[kind]
         row = (
             f"| `{kind.value}` | {stat.domain} | {stat.ipcidr} | {stat.skipped} | "
             f"{stat.unsupported_regex} | {stat.unsupported_modifier} | {stat.unsupported_path} | "
-            f"{stat.unsupported_pattern} |"
+            f"{stat.unsupported_port} | {stat.unsupported_pattern} |"
         )
         _ = lines.append(row)
     _ = lines.extend(
@@ -232,6 +232,7 @@ def print_summary(result: ConversionResult) -> None:
         summary = (
             f"{kind.value}: domain={stat.domain} ipcidr={stat.ipcidr} skipped={stat.skipped} "
             f"regex={stat.unsupported_regex} modifier={stat.unsupported_modifier} "
-            f"path={stat.unsupported_path} pattern={stat.unsupported_pattern} total={stat.total}"
+            f"path={stat.unsupported_path} port={stat.unsupported_port} "
+            f"pattern={stat.unsupported_pattern} total={stat.total}"
         )
         _ = print(summary)

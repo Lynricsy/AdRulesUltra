@@ -48,6 +48,7 @@ class ConversionStats:
     unsupported_regex: int = 0
     unsupported_modifier: int = 0
     unsupported_path: int = 0
+    unsupported_port: int = 0
     unsupported_pattern: int = 0
 
 

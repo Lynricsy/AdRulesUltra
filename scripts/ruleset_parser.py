@@ -59,10 +59,9 @@ def parse_unsupported_modifier_rule(
     *,
     allow_domain_modifier: bool,
 ) -> tuple[str, ...]:
-    suffix_semantics = rule.startswith(ADBLOCK_PREFIX)
-    extracted = extract_host_rule(rule, has_suffix_semantics=suffix_semantics) if allow_domain_modifier else None
-    if extracted is not None:
-        return (extracted,)
+    # DNS/domain 产物无法完整表达 modifier 语义时一律跳过，避免静默扩大放行/拦截范围。
+    # allow_domain_modifier 保留参数以兼容调用方，但默认不再做 host-only 降级。
+    del rule, allow_domain_modifier
     mark_skipped_modifier(stat)
     return ()
 
@@ -72,7 +71,7 @@ def parse_adguard_rule_body(rule: str, stat: ConversionStats) -> tuple[str, ...]
     candidate = rule.removeprefix(ADBLOCK_PREFIX).removesuffix("^").removesuffix("|").removeprefix("|")
     if normalized_cidr := as_ipcidr(candidate):
         return (normalized_cidr,)
-    if "/" in candidate or ":" in candidate or "^" in candidate:
+    if any(marker in candidate for marker in ("/", ":", "^", "?", "#")):
         return parse_rule_with_path_or_port(rule, stat, has_suffix_semantics=has_suffix_semantics)
     if not candidate or not HOSTNAME_RE.fullmatch(candidate):
         return skip_pattern(stat)
@@ -86,8 +85,13 @@ def parse_adguard_rule_body(rule: str, stat: ConversionStats) -> tuple[str, ...]
 
 
 def parse_rule_with_path_or_port(rule: str, stat: ConversionStats, *, has_suffix_semantics: bool) -> tuple[str, ...]:
-    if extracted := extract_host_rule(rule, has_suffix_semantics=has_suffix_semantics):
-        return (extracted,)
+    kind, host = analyze_rule_host(rule, has_suffix_semantics=has_suffix_semantics)
+    if kind == "host" and host is not None:
+        return (host,)
+    if kind == "port":
+        return skip_port(stat)
+    if kind == "path":
+        return skip_path(stat)
     return skip_path(stat)
 
 
@@ -103,19 +107,47 @@ def safe_modifiers(modifiers: frozenset[str]) -> bool:
 
 
 def extract_host_rule(rule: str, *, has_suffix_semantics: bool) -> str | None:
-    if url_host := extract_url_host_rule(rule, has_suffix_semantics=has_suffix_semantics):
-        return url_host
+    kind, host = analyze_rule_host(rule, has_suffix_semantics=has_suffix_semantics)
+    return host if kind == "host" else None
+
+
+def analyze_rule_host(rule: str, *, has_suffix_semantics: bool) -> tuple[str, str | None]:
+    """返回 (kind, host)。kind 为 host / path / port / none。"""
+    if url_result := analyze_url_rule_host(rule, has_suffix_semantics=has_suffix_semantics):
+        return url_result
 
     match = HOST_PREFIX_RE.match(rule)
     if match is None:
-        return None
-    host = match.group("host")
-    if as_ipcidr(host) is not None:
-        return host
-    return normalize_domain_pattern(host, has_suffix_semantics=has_suffix_semantics)
+        return ("none", None)
+
+    host_token = match.group("host")
+    body = rule.removeprefix(ADBLOCK_PREFIX)
+    if body == rule and rule.startswith("|"):
+        body = rule.removeprefix("|")
+    if not body.startswith(host_token):
+        return ("none", None)
+
+    rest = body[len(host_token) :]
+    if rest.startswith(":"):
+        if re.match(r"^:\d+", rest) is not None:
+            return ("port", None)
+        return ("path", None)
+    if rest.startswith(("/", "?", "#")):
+        return ("path", None)
+
+    cleaned = rest.rstrip("^|")
+    if cleaned:
+        return ("path", None)
+
+    if as_ipcidr(host_token) is not None:
+        return ("host", host_token)
+    normalized = normalize_domain_pattern(host_token, has_suffix_semantics=has_suffix_semantics)
+    if normalized is None:
+        return ("none", None)
+    return ("host", normalized)
 
 
-def extract_url_host_rule(rule: str, *, has_suffix_semantics: bool) -> str | None:
+def analyze_url_rule_host(rule: str, *, has_suffix_semantics: bool) -> tuple[str, str | None] | None:
     normalized_rule = rule.lstrip("|").rstrip("^|")
     if normalized_rule.startswith("blob:"):
         normalized_rule = normalized_rule.removeprefix("blob:")
@@ -126,11 +158,24 @@ def extract_url_host_rule(rule: str, *, has_suffix_semantics: bool) -> str | Non
 
     split_result = urlsplit(normalized_rule)
     if split_result.hostname is None:
-        return None
+        return ("none", None)
+    if split_result.port is not None:
+        return ("port", None)
+    if split_result.path or split_result.query or split_result.fragment:
+        return ("path", None)
+
     host = split_result.hostname.rstrip(".")
     if as_ipcidr(host) is not None:
-        return host
-    return normalize_domain_pattern(host, has_suffix_semantics=has_suffix_semantics)
+        return ("host", host)
+    normalized = normalize_domain_pattern(host, has_suffix_semantics=has_suffix_semantics)
+    if normalized is None:
+        return ("none", None)
+    return ("host", normalized)
+
+
+def extract_url_host_rule(rule: str, *, has_suffix_semantics: bool) -> str | None:
+    kind, host = analyze_url_rule_host(rule, has_suffix_semantics=has_suffix_semantics) or ("none", None)
+    return host if kind == "host" else None
 
 
 def normalize_domain_pattern(candidate: str, *, has_suffix_semantics: bool) -> str | None:
@@ -192,6 +237,12 @@ def mark_skipped_path(stat: ConversionStats) -> tuple[str, ...]:
     return ()
 
 
+def mark_skipped_port(stat: ConversionStats) -> tuple[str, ...]:
+    stat.unsupported_port += 1
+    stat.skipped += 1
+    return ()
+
+
 def mark_skipped_pattern(stat: ConversionStats) -> tuple[str, ...]:
     stat.unsupported_pattern += 1
     stat.skipped += 1
@@ -200,6 +251,10 @@ def mark_skipped_pattern(stat: ConversionStats) -> tuple[str, ...]:
 
 def skip_path(stat: ConversionStats) -> tuple[str, ...]:
     return mark_skipped_path(stat)
+
+
+def skip_port(stat: ConversionStats) -> tuple[str, ...]:
+    return mark_skipped_port(stat)
 
 
 def skip_pattern(stat: ConversionStats) -> tuple[str, ...]:
