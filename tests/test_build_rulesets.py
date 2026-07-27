@@ -7,7 +7,7 @@ from scripts.ruleset_core import convert_repositories, parse_rule, write_outputs
 from scripts.ruleset_domain import DomainMatchKind, classify_domain, to_domain_regex
 from scripts.ruleset_formats import write_kind_text_formats
 from scripts.ruleset_parser import parse_adguard_values
-from scripts.ruleset_stats import build_stats_payload
+from scripts.ruleset_stats import build_stats_payload, expected_release_assets, release_assets_complete
 from scripts.ruleset_types import (
     ConversionStats,
     RuleBuckets,
@@ -334,6 +334,45 @@ def test_build_stats_payload_when_release_assets_exist(tmp_path: Path) -> None:
     }
     assert payload["mrs"]["ads"]["bytes"] == ads_mrs_bytes
     assert "allow_ipcidr" not in payload["mrs"]
+
+
+def test_expected_release_assets_includes_checksum_file_itself() -> None:
+    checksum_text = (
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  dist/adrules_ultra_ads.txt\n"
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  dist/manifest.md\n"
+    )
+
+    assets = expected_release_assets(checksum_text)
+
+    assert assets == frozenset({"adrules_ultra_ads.txt", "manifest.md", "SHA256SUMS"})
+
+
+def test_release_assets_complete_when_remote_matches_checksum_and_names() -> None:
+    checksum_text = (
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  adrules_ultra_ads.txt\n"
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  manifest.md\n"
+    )
+    remote_names = {"adrules_ultra_ads.txt", "manifest.md", "SHA256SUMS"}
+
+    assert release_assets_complete(
+        local_checksum_text=checksum_text,
+        remote_checksum_text=checksum_text,
+        remote_asset_names=remote_names,
+    )
+
+
+def test_release_assets_incomplete_when_checksum_file_missing_from_remote() -> None:
+    checksum_text = (
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  adrules_ultra_ads.txt\n"
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  manifest.md\n"
+    )
+    remote_names = {"adrules_ultra_ads.txt", "manifest.md"}
+
+    assert not release_assets_complete(
+        local_checksum_text=checksum_text,
+        remote_checksum_text=checksum_text,
+        remote_asset_names=remote_names,
+    )
 
 
 def test_classify_domain_when_exact_suffix_subdomain_and_wildcard() -> None:

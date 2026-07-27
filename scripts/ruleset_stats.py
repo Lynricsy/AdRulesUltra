@@ -12,6 +12,8 @@ from scripts.ruleset_core import OUTPUT_PREFIX
 from scripts.ruleset_types import RuleKind
 
 STATS_FILE: Final[str] = "stats.json"
+SHA256SUM_HASH_WIDTH: Final[int] = 64
+SHA256SUM_PATH_OFFSET: Final[int] = SHA256SUM_HASH_WIDTH + 2
 ONE_THOUSAND: Final[int] = 1_000
 TEN_THOUSAND: Final[int] = 10_000
 ONE_MILLION: Final[int] = ONE_THOUSAND * ONE_THOUSAND
@@ -151,6 +153,35 @@ def format_bytes(value: int) -> str:
         return f"{value / ONE_MIB:.1f} MiB"
     return f"{value / ONE_GIB:.1f} GiB"
 
+
+def expected_release_assets(checksum_text: str, *, checksum_filename: str = "SHA256SUMS") -> frozenset[str]:
+    """从 SHA256SUMS 内容推导发布资产集合, 清单自身也会作为 release asset 上传."""
+    assets: set[str] = set()
+    for raw_line in checksum_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        # sha256sum 行格式: "<hash>  <path>" 或 "<hash> *<path>"
+        path_part = line[SHA256SUM_PATH_OFFSET:] if len(line) > SHA256SUM_PATH_OFFSET else ""
+        if not path_part:
+            continue
+        assets.add(Path(path_part.lstrip("*")).name)
+    assets.add(checksum_filename)
+    return frozenset(assets)
+
+
+def release_assets_complete(
+    *,
+    local_checksum_text: str,
+    remote_checksum_text: str,
+    remote_asset_names: set[str] | frozenset[str],
+    checksum_filename: str = "SHA256SUMS",
+) -> bool:
+    """远端 release 仅在 checksum 一致且资产名集合完整时视为可跳过."""
+    if local_checksum_text != remote_checksum_text:
+        return False
+    expected = expected_release_assets(local_checksum_text, checksum_filename=checksum_filename)
+    return frozenset(remote_asset_names) == expected
 
 def write_stats_file(output_dir: Path) -> Path:
     stats_path = output_dir / STATS_FILE
