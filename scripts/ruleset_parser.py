@@ -3,7 +3,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from typing import TYPE_CHECKING, Final
-from urllib.parse import urlsplit
+from urllib.parse import SplitResult, urlsplit
 
 if TYPE_CHECKING:
     from scripts.ruleset_types import ConversionStats
@@ -59,8 +59,8 @@ def parse_unsupported_modifier_rule(
     *,
     allow_domain_modifier: bool,
 ) -> tuple[str, ...]:
-    # DNS/domain 产物无法完整表达 modifier 语义时一律跳过，避免静默扩大放行/拦截范围。
-    # allow_domain_modifier 保留参数以兼容调用方，但默认不再做 host-only 降级。
+    # DNS/domain 产物无法完整表达 modifier 语义时一律跳过, 避免静默扩大放行/拦截范围.
+    # allow_domain_modifier 保留参数以兼容调用方, 但默认不再做 host-only 降级.
     del rule, allow_domain_modifier
     mark_skipped_modifier(stat)
     return ()
@@ -90,8 +90,6 @@ def parse_rule_with_path_or_port(rule: str, stat: ConversionStats, *, has_suffix
         return (host,)
     if kind == "port":
         return skip_port(stat)
-    if kind == "path":
-        return skip_path(stat)
     return skip_path(stat)
 
 
@@ -112,10 +110,13 @@ def extract_host_rule(rule: str, *, has_suffix_semantics: bool) -> str | None:
 
 
 def analyze_rule_host(rule: str, *, has_suffix_semantics: bool) -> tuple[str, str | None]:
-    """返回 (kind, host)。kind 为 host / path / port / none。"""
+    """分析规则 host 语义, 返回 (kind, host). kind 为 host / path / port / none."""
     if url_result := analyze_url_rule_host(rule, has_suffix_semantics=has_suffix_semantics):
         return url_result
+    return analyze_prefix_rule_host(rule, has_suffix_semantics=has_suffix_semantics)
 
+
+def analyze_prefix_rule_host(rule: str, *, has_suffix_semantics: bool) -> tuple[str, str | None]:
     match = HOST_PREFIX_RE.match(rule)
     if match is None:
         return ("none", None)
@@ -128,16 +129,8 @@ def analyze_rule_host(rule: str, *, has_suffix_semantics: bool) -> tuple[str, st
         return ("none", None)
 
     rest = body[len(host_token) :]
-    if rest.startswith(":"):
-        if re.match(r"^:\d+", rest) is not None:
-            return ("port", None)
-        return ("path", None)
-    if rest.startswith(("/", "?", "#")):
-        return ("path", None)
-
-    cleaned = rest.rstrip("^|")
-    if cleaned:
-        return ("path", None)
+    if kind := classify_host_rest(rest):
+        return (kind, None)
 
     if as_ipcidr(host_token) is not None:
         return ("host", host_token)
@@ -147,22 +140,26 @@ def analyze_rule_host(rule: str, *, has_suffix_semantics: bool) -> tuple[str, st
     return ("host", normalized)
 
 
+def classify_host_rest(rest: str) -> str | None:
+    if rest.startswith(":"):
+        return "port" if re.match(r"^:\d+", rest) is not None else "path"
+    if rest.startswith(("/", "?", "#")):
+        return "path"
+    if rest.rstrip("^|"):
+        return "path"
+    return None
+
+
 def analyze_url_rule_host(rule: str, *, has_suffix_semantics: bool) -> tuple[str, str | None] | None:
-    normalized_rule = rule.lstrip("|").rstrip("^|")
-    if normalized_rule.startswith("blob:"):
-        normalized_rule = normalized_rule.removeprefix("blob:")
-    if normalized_rule.startswith("://"):
-        normalized_rule = f"https{normalized_rule}"
-    if not normalized_rule.startswith(URL_SCHEMES):
+    normalized_rule = normalize_url_rule_text(rule)
+    if normalized_rule is None:
         return None
 
     split_result = urlsplit(normalized_rule)
     if split_result.hostname is None:
         return ("none", None)
-    if split_result.port is not None:
-        return ("port", None)
-    if split_result.path or split_result.query or split_result.fragment:
-        return ("path", None)
+    if kind := classify_url_split(split_result):
+        return (kind, None)
 
     host = split_result.hostname.rstrip(".")
     if as_ipcidr(host) is not None:
@@ -171,6 +168,32 @@ def analyze_url_rule_host(rule: str, *, has_suffix_semantics: bool) -> tuple[str
     if normalized is None:
         return ("none", None)
     return ("host", normalized)
+
+
+def classify_url_split(split_result: SplitResult) -> str | None:
+    if url_has_explicit_port(split_result):
+        return "port"
+    if split_result.path or split_result.query or split_result.fragment:
+        return "path"
+    return None
+
+
+def normalize_url_rule_text(rule: str) -> str | None:
+    normalized_rule = rule.lstrip("|").rstrip("^|")
+    if normalized_rule.startswith("blob:"):
+        normalized_rule = normalized_rule.removeprefix("blob:")
+    if normalized_rule.startswith("://"):
+        normalized_rule = f"https{normalized_rule}"
+    if not normalized_rule.startswith(URL_SCHEMES):
+        return None
+    return normalized_rule
+
+
+def url_has_explicit_port(split_result: SplitResult) -> bool:
+    try:
+        return split_result.port is not None
+    except ValueError:
+        return True
 
 
 def extract_url_host_rule(rule: str, *, has_suffix_semantics: bool) -> str | None:

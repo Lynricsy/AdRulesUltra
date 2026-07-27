@@ -78,12 +78,13 @@ def test_parse_ipcidr_rule_when_cidr_literal() -> None:
 def test_skip_block_rule_when_host_has_path() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
+    path_rule_count = 2
 
     parse_rule("||claude.ai/sentry^", RuleKind.ADS, collectors, stats)
     parse_rule("||example.com/path.js^", RuleKind.ADS, collectors, stats)
 
     assert collectors[RuleKind.ADS].domains == set()
-    assert stats[RuleKind.ADS].unsupported_path == 2
+    assert stats[RuleKind.ADS].unsupported_path == path_rule_count
     assert "+.claude.ai" not in collectors[RuleKind.ADS].domains
 
 
@@ -139,24 +140,38 @@ def test_skip_allow_rule_when_exception_with_websocket_url_modifier() -> None:
 def test_skip_block_rule_when_host_has_port() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
+    port_rule_count = 2
 
     parse_rule("||ad.example.com:8443^", RuleKind.ADS, collectors, stats)
     parse_rule("||example.com:8443^", RuleKind.ADS, collectors, stats)
 
     assert collectors[RuleKind.ADS].domains == set()
-    assert stats[RuleKind.ADS].unsupported_port == 2
+    assert stats[RuleKind.ADS].unsupported_port == port_rule_count
+
+
+def test_skip_block_rule_when_url_has_invalid_port() -> None:
+    collectors = {kind: RuleCollector() for kind in RuleKind}
+    stats = {kind: ConversionStats() for kind in RuleKind}
+    invalid_port_rule_count = 2
+
+    parse_rule("@@https://example.com:99999^", RuleKind.ADS, collectors, stats)
+    parse_rule("@@https://example.com:abc^", RuleKind.ADS, collectors, stats)
+
+    assert collectors[RuleKind.ALLOW].domains == set()
+    assert stats[RuleKind.ALLOW].unsupported_port == invalid_port_rule_count
 
 
 def test_skip_block_rule_when_host_has_query_or_fragment() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
     stats = {kind: ConversionStats() for kind in RuleKind}
+    query_fragment_rule_count = 3
 
     parse_rule("||example.com?x=1^", RuleKind.ADS, collectors, stats)
     parse_rule("||example.com#section^", RuleKind.ADS, collectors, stats)
     parse_rule("||example.com/^", RuleKind.ADS, collectors, stats)
 
     assert collectors[RuleKind.ADS].domains == set()
-    assert stats[RuleKind.ADS].unsupported_path == 3
+    assert stats[RuleKind.ADS].unsupported_path == query_fragment_rule_count
 
 def test_parse_domain_rule_when_safe_wildcard_suffix_rule() -> None:
     collectors = {kind: RuleCollector() for kind in RuleKind}
